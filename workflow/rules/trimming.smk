@@ -23,8 +23,8 @@ rule trimming_pe:
 		unpack(get_fastq_pe),
 	output:
 		trimmed=[
-			"results/trimmed/pe/{sample}-{unit}.1.fastq.gz",
-			"results/trimmed/pe/{sample}-{unit}.2.fastq.gz",
+			temp("results/trimmed/pe/{sample}-{unit}.1.fastq.gz"),
+			temp("results/trimmed/pe/{sample}-{unit}.2.fastq.gz"),
 		],
 		html="results/qc/trimmed/pe/{sample}-{unit}.html",
 		json="results/qc/trimmed/pe/{sample}-{unit}_fastp.json",
@@ -52,7 +52,7 @@ rule trimming_se:
 	input:
 		unpack(get_fastq_se),
 	output:
-		trimmed=["results/trimmed/se/{sample}-{unit}.1.fastq.gz"],
+		trimmed=[temp("results/trimmed/se/{sample}-{unit}.1.fastq.gz")],
 		html="results/qc/trimmed/se/{sample}-{unit}.html",
 		json="results/qc/trimmed/se/{sample}-{unit}_fastp.json",
 	log:
