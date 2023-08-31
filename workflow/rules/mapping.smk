@@ -48,7 +48,7 @@ rule mapping_Salmon_Quant_se:
 		" {params.extra}"
 		" --index {input.idx}"
 		" --libType A"
-		" --mates1 {input.reads[0]}"
+		" --unmatedReads {input.reads[0]}"
 		" --output {output}"
 		" --threads {threads}"
 		")"
