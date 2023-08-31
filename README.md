@@ -50,7 +50,7 @@ The `Expression_Quant.py` script handels the high level running and organization
 Use Salmon to quantify gene expression in each sample. Will download (if needed) and trim reads before mapping.
 ```bash
 conda activate Expression_Quant
-./Genotype_Samples.py --configfile config/config.yaml
+./Expression_Quant.py --configfile config/config.yaml
 ```
 Once the workflow has finished it should have generated a report for all the major outputs and plots. This report will be in the project results directory, it will the form of a HTML file which will be contained in a zip file, and will be named after the workflow that you ran (i.e., the report HTML will be in `/results/project_name/module_type.zip`).
 
@@ -62,7 +62,7 @@ Run test analyses using the following commands.
 conda activate Expression_Quant
 
 # Cross-mapping
-./Genotype_Samples.py --configfile tests/config/config.example_small.yaml
+./Expression_Quant.py --configfile tests/config/config.example_small.yaml
 
 # Cleanup
 rm -fr .cache .keras .parallel .snakemake resources results
