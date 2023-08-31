@@ -1,4 +1,4 @@
-name: Salmon_Quant
+name: Expression_Quant
 channels:
   - conda-forge
   - bioconda

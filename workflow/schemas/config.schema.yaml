@@ -12,13 +12,9 @@ properties:
     type: string
   ref_path:
     type: object
-  decoy_names:
-    type: string
-
 
 # entries that have to be in the config file for successful validation
 required:
   - project_name
   - samples
   - ref_path
-  - decoy_names

@@ -13,6 +13,7 @@ samples: 'config/samples.tsv'
 ref_path:
   'genome2': 'path/to/genome2.fa.gz'
 
-# Path to names of decoy sequences (leave blank if no decoys used)
-decoy_names: ''
+# To add decoys, uncomment the following commands and provided the path to the decoy sequence names file.
+#ref_Salmon_index:
+#  params: '--decoys /path/to/seq/names/file.txt'
 
