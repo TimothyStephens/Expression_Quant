@@ -1,0 +1,18 @@
+################################
+#### Config for Salmon Quant
+################################
+
+# Name of project
+project_name: 'species1'
+
+# Path to sample manifest
+samples: 'config/samples.tsv'
+
+# Path to CDS (or CDS+decoys) to use for quant
+# reference name : absolute path (can be gzipped)
+ref_path:
+  'genome2': 'path/to/genome2.fa.gz'
+
+# Path to names of decoy sequences (leave blank if no decoys used)
+decoy_names: ''
+

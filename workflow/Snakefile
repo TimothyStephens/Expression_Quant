@@ -1,0 +1,45 @@
+#container: "docker://timothystephens/genotype_samples:latest"
+
+from snakemake.utils import min_version
+min_version("6.5")
+
+
+configfile: "workflow/config.default.yaml"
+
+report: "report/workflow.rst"
+
+
+include: "rules/common.smk"
+include: "rules/ref.smk"
+include: "rules/download.smk"
+include: "rules/trimming.smk"
+include: "rules/mapping.smk"
+include: "rules/qc.smk"
+include: "rules/multiqc.smk"
+
+
+DONE_WORKFLOW = "results/{project}/{module_file}.done".format(
+	project=config["project_name"], 
+	module_file=config["module"],
+)
+
+
+localrules:
+	all,
+	salmon_quant,
+
+
+rule all:
+	input:
+		DONE_WORKFLOW,
+
+
+rule salmon_quant:
+	input:
+		rules.multiqc.output,
+		rules.mapping_Salmon_Quantmerge_tpm.output,
+		rules.mapping_Salmon_Quantmerge_numreads.output,
+	output:
+		touch("results/{project}/salmon_quant.done"),
+
+

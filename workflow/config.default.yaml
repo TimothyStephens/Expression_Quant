@@ -1,0 +1,65 @@
+
+
+################################
+#### Download
+################################
+# fasterq-dump
+download_fastq_pe:
+  params: ''
+  threads: 6
+  retries: 5
+
+download_fastq_se:
+  params: ''
+  threads: 6
+  retries: 5
+
+
+################################
+#### Salmon index
+################################
+ref_Salmon_index:
+  threads: 4
+  params: ''
+#  params: '--decoys /path/to/seq/names/file.txt'
+
+################################
+#### Trimming
+################################
+# fastp paired-end
+trimming_pe:
+  params: ''
+  threads: 16
+
+# fastp single-end
+trimming_se:
+  params: ''
+  threads: 16
+
+
+################################
+#### Salmon Mapping
+################################
+mapping_Salmon_Quant_pe:
+  params: '--seqBias --gcBias --posBias'
+  threads: 6
+
+mapping_Salmon_Quant_se:
+  params: '--seqBias --gcBias --posBias'
+  threads: 6
+
+
+################################
+#### QC
+################################
+# FastQC
+qc_FastQC:
+  params: ''
+  mem_mb: 512
+  threads: 1
+
+# MultiQC
+qc_multiqc:
+  params: ''
+
+
