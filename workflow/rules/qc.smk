@@ -34,12 +34,10 @@ rule qc_fastqc:
 def get_raw_fastq_paths(wildcards):
 	for i, row in samples.iterrows():
 		if wildcards.fq == "{sample}-{unit}.1".format(sample=row.sample_id, unit=row.unit):
-			if (row.fq1.startswith("DRR") or row.fq1.startswith("ERR") or row.fq1.startswith("SRR")) and row.lib_type.endswith("-pe"):
+			if (row.fq1.startswith("DRR") or row.fq1.startswith("ERR") or row.fq1.startswith("SRR")) and row.lib_type == "pe":
 				return ["data/pe/{}_1.fastq.gz".format(row.fq1)]
-			elif (row.fq1.startswith("DRR") or row.fq1.startswith("ERR") or row.fq1.startswith("SRR")) and row.lib_type.endswith("-se"):
+			elif (row.fq1.startswith("DRR") or row.fq1.startswith("ERR") or row.fq1.startswith("SRR")) and row.lib_type == "se":
 				return ["data/se/{}.fastq.gz".format(row.fq1)]
-			elif (row.fq1.startswith("DRR") or row.fq1.startswith("ERR") or row.fq1.startswith("SRR")) and row.lib_type.endswith("-long"):
-				return ["data/long/{}.fastq.gz".format(row.fq1)]
 			else:
 				return [row.fq1]
 		elif wildcards.fq == "{sample}-{unit}.2".format(sample=row.sample_id, unit=row.unit):
