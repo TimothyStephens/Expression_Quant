@@ -12,6 +12,7 @@ rule qc_fastqc:
 	params:
 		extra=config["qc_FastQC"]["params"],
 		mem_mb=config["qc_FastQC"]["mem_mb"],
+	priority: 20
 	threads: config["qc_FastQC"]["threads"]
 	conda:
 		"../envs/fastqc.yaml"
@@ -59,6 +60,7 @@ rule qc_fastqc_rawReads:
 	params:
 		extra=config["qc_FastQC"]["params"],
 		mem_mb=config["qc_FastQC"]["mem_mb"],
+	priority: 20
 	threads: config["qc_FastQC"]["threads"]
 	conda:
 		"../envs/fastqc.yaml"

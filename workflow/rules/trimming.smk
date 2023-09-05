@@ -32,6 +32,7 @@ rule trimming_pe:
 		"results/logs/trimmed/pe/{sample}-{unit}.log",
 	params:
 		extra=config["trimming_pe"]["params"],
+	priority: 10
 	threads: config["trimming_pe"]["threads"]
 	conda:
 		"../envs/fastp.yaml"
@@ -59,6 +60,7 @@ rule trimming_se:
 		"results/logs/trimmed/se/{sample}-{unit}.log",
 	params:
 		extra=config["trimming_se"]["params"],
+	priority: 10
 	threads: config["trimming_se"]["threads"]
 	conda:
 		"../envs/fastp.yaml"

@@ -10,6 +10,7 @@ rule mapping_Salmon_Quant_pe:
 		"results/logs/mapping/{ref_name}/pe/{sample}-{unit}.log",
 	params:
 		extra=config["mapping_Salmon_Quant_pe"]["params"],
+	priority: 20
 	threads: config["mapping_Salmon_Quant_pe"]["threads"]
 	conda:
 		"../envs/salmon.yaml"
@@ -38,6 +39,7 @@ rule mapping_Salmon_Quant_se:
 		"results/logs/mapping/{ref_name}/se/{sample}-{unit}.log",
 	params:
 		extra=config["mapping_Salmon_Quant_se"]["params"],
+	priority: 20
 	threads: config["mapping_Salmon_Quant_se"]["threads"]
 	conda:
 		"../envs/salmon.yaml"
