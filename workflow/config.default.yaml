@@ -21,7 +21,6 @@ download_fastq_se:
 ref_Salmon_index:
   threads: 4
   params: ''
-#  params: '--decoys /path/to/seq/names/file.txt'
 
 ################################
 #### Trimming
