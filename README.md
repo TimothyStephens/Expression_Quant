@@ -3,8 +3,11 @@ Snakemake workflow to automatically quantify gene expression with Salmon using l
 
 ## Documentation
 [Setup and installation](https://github.com/TimothyStephens/Expression_Quant/wiki#setup-and-installation)
+
 [Workflow config](https://github.com/TimothyStephens/Expression_Quant/wiki#workflow-config)
+
 [Running the workflow](https://github.com/TimothyStephens/Expression_Quant/wiki#running-the-workflow)
+
 [Results explanation](https://github.com/TimothyStephens/Expression_Quant/wiki#results)
 
 [Run tests](https://github.com/TimothyStephens/Expression_Quant/wiki/Test_Example)
