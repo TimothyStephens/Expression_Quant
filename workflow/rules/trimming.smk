@@ -80,8 +80,8 @@ def get_pe_fqs_to_merge(wildcards):
 	rows = samples.loc[(wildcards.sample), ["sample_id", "unit", "lib_type", "fq1", "fq2"]]
 	for i, row in rows.iterrows():
 		if row.lib_type == "pe":
-			fqs['fq1'].append("results/trimmed/pe/{sample}-{unit}.1.fastq.gz".format(ref_name=wildcards.ref_name, sample=row.sample_id, unit=row.unit, lib_type=row.lib_type))
-			fqs['fq2'].append("results/trimmed/pe/{sample}-{unit}.2.fastq.gz".format(ref_name=wildcards.ref_name, sample=row.sample_id, unit=row.unit, lib_type=row.lib_type))
+			fqs['fq1'].append("results/trimmed/pe/{sample}-{unit}.1.fastq.gz".format(sample=row.sample_id, unit=row.unit))
+			fqs['fq2'].append("results/trimmed/pe/{sample}-{unit}.2.fastq.gz".format(sample=row.sample_id, unit=row.unit))
 	return fqs
 
 def get_se_fqs_to_merge(wildcards):
@@ -89,7 +89,7 @@ def get_se_fqs_to_merge(wildcards):
 	rows = samples.loc[(wildcards.sample), ["sample_id", "unit", "lib_type", "fq1", "fq2"]]
 	for i, row in rows.iterrows():
 		if row.lib_type == "se":
-			fqs['fq1'].append("results/trimmed/se/{sample}-{unit}.1.fastq.gz".format(ref_name=wildcards.ref_name, sample=row.sample_id, unit=row.unit, lib_type=row.lib_type))
+			fqs['fq1'].append("results/trimmed/se/{sample}-{unit}.1.fastq.gz".format(sample=row.sample_id, unit=row.unit))
 	return fqs
 
 
