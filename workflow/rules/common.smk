@@ -63,7 +63,7 @@ def get_salmon_outdirs(wildcards):
 	outdirs = []
 	for i, row in samples.iterrows():
 		outdirs.append("results/mapping/{ref_name}/{lib_type}/{sample}.salmon".format(ref_name=list(config["ref_path"].keys())[0], sample=row.sample_id, lib_type=row.lib_type))
-        outdirs = list(set(outdirs))
+	outdirs = list(set(outdirs))
 	return outdirs
 
 
