@@ -1,0 +1,199 @@
+---
+title: "DGE GO Semantic Similarity"
+author: "Expression_Quant"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    keep_md: yes
+---
+
+
+
+```{r setup, include=FALSE}
+# The following setting is important, do not omit.
+knitr::opts_chunk$set(echo = TRUE,
+                      fig.height = 8,
+                      fig.width = 12,
+                      dev = c("png", "pdf"),
+                      dpi = 1000)
+options(scipen = 999) # Prevent scientific notation
+rm(list = ls()) # Clear environment
+```
+
+*Note: Open scripts.Rproj first, then script. To easily use relative paths, click the down button next to knit and then click "Knit Directory --> Project Directory". This should make loading and saving files much easier.*
+
+
+
+# GO Semantic Similarity
+
+Perform GO Semantic Similarity analysis to gain additional insights into our DGE enriched GO terms, using results from DGE analysis (i.e., after running the `1a-DGE.Rmd` script).
+<span style="color:red">Red text</span> indicates regions that require the user to modify.
+Regardless, the user should check over all code blocks to ensure that everything is running correctly.
+
+
+
+## 1. Load packages
+
+Load packages
+```{r load_packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(org.Hs.eg.db)
+library(simplifyEnrichment)
+library(magick)
+```
+
+
+
+## 2. Set variables
+
+<span style="color:red">**Change file names and conditions where appropriate.**</span>
+```{r variables}
+# Input unfiltered data
+GO_term.file <- "salmon.numreads.DGE_results.GOsig.tsv"
+```
+
+
+
+## 3. Load, clean, and pre-processing datasets
+
+Load GO data and select only the GO_IDs associated with BP, MF, and CC terms.
+```{r load_GO_terms}
+GO <- read.csv(GO_term.file, header=TRUE, sep="\t")
+
+# Print stats
+print(paste("Number sig BP terms: ", nrow(filter(GO, ontology=="BP")), sep=''))
+print(paste("Number sig MF terms: ", nrow(filter(GO, ontology=="MF")), sep=''))
+print(paste("Number sig CC terms: ", nrow(filter(GO, ontology=="CC")), sep=''))
+
+# Extract BP, MF, and CC separatly
+GO.BP <- GO %>% filter(ontology == "BP")
+BP <- GO.BP$category
+GO.MF <- GO %>% filter(ontology == "MF")
+MF <- GO.MF$category
+GO.CC <- GO %>% filter(ontology == "CC")
+CC <- GO.CC$category
+```
+
+
+
+## 4. Calculate a similarity matrix and save the output
+
+```{r BP_simplifyGO}
+simplifyGO(GO_similarity(BP, ont = "BP", db = "org.Hs.eg.db"),
+           word_cloud_grob_param = list(max_width = 50),
+           max_words=20
+          )
+```
+
+
+```{r MF_simplifyGO}
+simplifyGO(GO_similarity(MF, ont = "MF", db = "org.Hs.eg.db"),
+           word_cloud_grob_param = list(max_width = 50),
+           max_words=20
+          )
+```
+
+
+```{r CC_simplifyGO}
+simplifyGO(GO_similarity(CC, ont = "CC", db = "org.Hs.eg.db"),
+           word_cloud_grob_param = list(max_width = 50),
+           max_words=20
+          )
+```
+
+
+
+## 5. Plot term significance values
+
+```{r plot_BP_significance}
+GO.BP %>%
+  mutate(term = fct_reorder(term, over_represented_pvalue, .desc = TRUE)) %>%
+  ggplot(aes(x=term, y=over_represented_pvalue) ) +
+      geom_segment( aes(x=term ,xend=term, y=0, yend=over_represented_pvalue), color="grey") +
+      geom_point(size=3, color="#69b3a2") +
+      coord_flip() +
+      theme(
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.y = element_blank(),
+        legend.position="none"
+      ) +
+  xlab("") +
+  ylab("over_represented_pvalue") +
+  ggtitle("Adult") + #add a main title
+  theme(plot.title = element_text(face = 'bold',
+                                  size = 12,
+                                  hjust = 0)) +
+  theme_bw() + #Set background color
+  theme(panel.border = element_blank(), # Set border
+                     panel.grid.major = element_blank(), #Set major gridlines
+                     panel.grid.minor = element_blank(), #Set minor gridlines
+                     axis.line = element_line(colour = "black"), #Set axes color
+        plot.background=element_blank(),#Set the plot background
+        legend.position="none")
+```
+
+
+```{r plot_MF_significance}
+GO.MF %>%
+  mutate(term = fct_reorder(term, over_represented_pvalue, .desc = TRUE)) %>%
+  ggplot(aes(x=term, y=over_represented_pvalue) ) +
+      geom_segment( aes(x=term ,xend=term, y=0, yend=over_represented_pvalue), color="grey") +
+      geom_point(size=3, color="#69b3a2") +
+      coord_flip() +
+      theme(
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.y = element_blank(),
+        legend.position="none"
+      ) +
+  xlab("") +
+  ylab("over_represented_pvalue") +
+  ggtitle("Adult") + #add a main title
+  theme(plot.title = element_text(face = 'bold',
+                                  size = 12,
+                                  hjust = 0)) +
+  theme_bw() + #Set background color
+  theme(panel.border = element_blank(), # Set border
+                     panel.grid.major = element_blank(), #Set major gridlines
+                     panel.grid.minor = element_blank(), #Set minor gridlines
+                     axis.line = element_line(colour = "black"), #Set axes color
+        plot.background=element_blank(),#Set the plot background
+        legend.position="none")
+```
+
+
+```{r plot_CC_significance}
+GO.CC %>%
+  mutate(term = fct_reorder(term, over_represented_pvalue, .desc = TRUE)) %>%
+  ggplot(aes(x=term, y=over_represented_pvalue) ) +
+      geom_segment( aes(x=term ,xend=term, y=0, yend=over_represented_pvalue), color="grey") +
+      geom_point(size=3, color="#69b3a2") +
+      coord_flip() +
+      theme(
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.y = element_blank(),
+        legend.position="none"
+      ) +
+  xlab("") +
+  ylab("over_represented_pvalue") +
+  ggtitle("Adult") + #add a main title
+  theme(plot.title = element_text(face = 'bold',
+                                  size = 12,
+                                  hjust = 0)) +
+  theme_bw() + #Set background color
+  theme(panel.border = element_blank(), # Set border
+                     panel.grid.major = element_blank(), #Set major gridlines
+                     panel.grid.minor = element_blank(), #Set minor gridlines
+                     axis.line = element_line(colour = "black"), #Set axes color
+        plot.background=element_blank(),#Set the plot background
+        legend.position="none")
+```
+
+
+
+## 6. Session Info
+
+```{r ressionInfo}
+sessionInfo()
+```
+
+
