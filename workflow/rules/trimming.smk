@@ -108,7 +108,7 @@ rule trimming_pe_merge:
 		"../envs/bash.yaml"
 	shell:
 		"("
-		"cat {input.fq1} > {output.trimmed[0]}"
+		"cat {input.fq1} > {output.trimmed[0]}; "
 		"cat {input.fq2} > {output.trimmed[1]}"
 		")"
 		" 1>{log} 2>&1"
