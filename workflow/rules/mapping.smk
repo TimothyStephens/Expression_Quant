@@ -5,9 +5,9 @@ rule mapping_Salmon_Quant_pe:
 		reads=rules.trimming_pe.output.trimmed,
 		idx=rules.ref_Salmon_index.output,
 	output:
-		directory("results/mapping/{ref_name}/pe/{sample}-{unit}.salmon"),
+		directory("results/mapping/{ref_name}/pe/{sample}.salmon"),
 	log:
-		"results/logs/mapping/{ref_name}/pe/{sample}-{unit}.log",
+		"results/logs/mapping/{ref_name}/pe/{sample}.log",
 	params:
 		extra=config["mapping_Salmon_Quant_pe"]["params"],
 	priority: 20
@@ -33,10 +33,10 @@ rule mapping_Salmon_Quant_se:
 		reads=rules.trimming_se.output.trimmed,
 		idx=rules.ref_Salmon_index.output,
 	output:
-		outdir=directory("results/mapping/{ref_name}/se/{sample}-{unit}.salmon"),
-		quant="results/mapping/{ref_name}/se/{sample}-{unit}.salmon/quant.sf",
+		outdir=directory("results/mapping/{ref_name}/se/{sample}.salmon"),
+		quant="results/mapping/{ref_name}/se/{sample}.salmon/quant.sf",
 	log:
-		"results/logs/mapping/{ref_name}/se/{sample}-{unit}.log",
+		"results/logs/mapping/{ref_name}/se/{sample}.log",
 	params:
 		extra=config["mapping_Salmon_Quant_se"]["params"],
 	priority: 20

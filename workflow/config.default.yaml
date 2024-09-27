@@ -35,6 +35,10 @@ trimming_se:
   params: ''
   threads: 16
 
+# Merge trimmed units per sample
+trimming_merge:
+  threads: 1
+
 
 ################################
 #### Salmon Mapping
