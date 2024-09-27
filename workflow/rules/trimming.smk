@@ -76,7 +76,7 @@ rule trimming_se:
 
 
 def get_pe_fqs_to_merge(wildcards):
-fqs = {"fq1":[], "fq2":[]}
+	fqs = {"fq1":[], "fq2":[]}
 	rows = samples.loc[(wildcards.sample), ["sample_id", "unit", "lib_type", "fq1", "fq2"]]
 	for i, row in rows.iterrows():
 		if row.lib_type == "pe":
