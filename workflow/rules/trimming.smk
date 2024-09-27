@@ -105,7 +105,7 @@ rule trimming_pe_merge:
 		"results/logs/trimmed/pe/{sample}.log",
 	threads: config["trimming_merge"]["threads"]
 	conda:
-		"../envs/base.yaml"
+		"../envs/bash.yaml"
 	shell:
 		"("
 		"cat {input.fq1} > {output.trimmed[0]}"
@@ -125,7 +125,7 @@ rule trimming_se_merge:
 		"results/logs/trimmed/se/{sample}.log",
 	threads: config["trimming_merge"]["threads"] 
 	conda:
-		"../envs/base.yaml"
+		"../envs/bash.yaml"
 	shell:
 		"("
 		"cat {input.fq1} > {output.trimmed[0]}"
