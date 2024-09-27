@@ -76,60 +76,59 @@ rule trimming_se:
 
 
 def get_pe_fqs_to_merge(wildcards):
-    fqs = {"fq1":[], "fq2":[]}
-    rows = samples.loc[(wildcards.sample), ["sample_id", "unit", "lib_type", "fq1", "fq2"]]
-    for i, row in rows.iterrows():
-        if row.lib_type == "pe":
-            fqs['fq1'].append("results/trimmed/pe/{sample}-{unit}.1.fastq.gz".format(ref_name=wildcards.ref_name, sample=row.sample_id, unit=row.unit, lib_type=row.lib_type))
-            fqs['fq2'].append("results/trimmed/pe/{sample}-{unit}.2.fastq.gz".format(ref_name=wildcards.ref_name, sample=row.sample_id, unit=row.unit, lib_type=row.lib_type))
-    return fqs
+fqs = {"fq1":[], "fq2":[]}
+	rows = samples.loc[(wildcards.sample), ["sample_id", "unit", "lib_type", "fq1", "fq2"]]
+	for i, row in rows.iterrows():
+		if row.lib_type == "pe":
+			fqs['fq1'].append("results/trimmed/pe/{sample}-{unit}.1.fastq.gz".format(ref_name=wildcards.ref_name, sample=row.sample_id, unit=row.unit, lib_type=row.lib_type))
+			fqs['fq2'].append("results/trimmed/pe/{sample}-{unit}.2.fastq.gz".format(ref_name=wildcards.ref_name, sample=row.sample_id, unit=row.unit, lib_type=row.lib_type))
+	return fqs
 
 def get_se_fqs_to_merge(wildcards):
-    fqs = {"fq1":[]}
-    rows = samples.loc[(wildcards.sample), ["sample_id", "unit", "lib_type", "fq1", "fq2"]]
-    for i, row in rows.iterrows():
-        if row.lib_type == "se":
-            fqs['fq1'].append("results/trimmed/se/{sample}-{unit}.1.fastq.gz".format(ref_name=wildcards.ref_name, sample=row.sample_id, unit=row.unit, lib_type=row.lib_type))
-    return fqs
+	fqs = {"fq1":[]}
+	rows = samples.loc[(wildcards.sample), ["sample_id", "unit", "lib_type", "fq1", "fq2"]]
+	for i, row in rows.iterrows():
+		if row.lib_type == "se":
+			fqs['fq1'].append("results/trimmed/se/{sample}-{unit}.1.fastq.gz".format(ref_name=wildcards.ref_name, sample=row.sample_id, unit=row.unit, lib_type=row.lib_type))
+	return fqs
 
 
 rule trimming_pe_merge:
-    input:
-        unpack(get_pe_fqs_to_merge)
-    output:
-        trimmed=[
-            temp("results/trimmed/pe/{sample}.1.fastq.gz"),
-            temp("results/trimmed/pe/{sample}.2.fastq.gz"),
-        ],
-    log:
-        "results/logs/trimmed/pe/{sample}.log",
-    threads: config["trimming_merge"]["threads"]
-    conda:
-        "../envs/base.yaml"
-    shell:
-        "("
-        "cat {input.fq1} > {output.trimmed[0]}"
-        "cat {input.fq2} > {output.trimmed[1]}"
-        ")"
-        " 1>{log} 2>&1"
+	input:
+		unpack(get_pe_fqs_to_merge)
+	output:
+		trimmed=[
+			temp("results/trimmed/pe/{sample}.1.fastq.gz"),
+			temp("results/trimmed/pe/{sample}.2.fastq.gz"),
+		],
+	log:
+		"results/logs/trimmed/pe/{sample}.log",
+	threads: config["trimming_merge"]["threads"]
+	conda:
+		"../envs/base.yaml"
+	shell:
+		"("
+		"cat {input.fq1} > {output.trimmed[0]}"
+		"cat {input.fq2} > {output.trimmed[1]}"
+		")"
+		" 1>{log} 2>&1"
 
 
 rule trimming_se_merge:
-    input:
-        unpack(get_se_fqs_to_merge)
-    output:
-        trimmed=[
-            temp("results/trimmed/se/{sample}.1.fastq.gz"),
-        ],
-    log:
-        "results/logs/trimmed/se/{sample}.log",
-    threads: config["trimming_merge"]["threads"] 
-    conda:
-        "../envs/base.yaml"
-    shell:
-        "("
-        "cat {input.fq1} > {output.trimmed[0]}"
-        ")"
-        " 1>{log} 2>&1"
-
+	input:
+		unpack(get_se_fqs_to_merge)
+	output:
+		trimmed=[
+			temp("results/trimmed/se/{sample}.1.fastq.gz"),
+		],
+	log:
+		"results/logs/trimmed/se/{sample}.log",
+	threads: config["trimming_merge"]["threads"] 
+	conda:
+		"../envs/base.yaml"
+	shell:
+		"("
+		"cat {input.fq1} > {output.trimmed[0]}"
+		")"
+		" 1>{log} 2>&1"
 

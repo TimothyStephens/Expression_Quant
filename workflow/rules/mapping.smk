@@ -2,7 +2,7 @@
 
 rule mapping_Salmon_Quant_pe:
 	input:
-		reads=rules.trimming_pe.output.trimmed,
+		reads=rules.trimming_pe_merge.output.trimmed,
 		idx=rules.ref_Salmon_index.output,
 	output:
 		directory("results/mapping/{ref_name}/pe/{sample}.salmon"),
@@ -30,7 +30,7 @@ rule mapping_Salmon_Quant_pe:
 
 rule mapping_Salmon_Quant_se:
 	input:
-		reads=rules.trimming_se.output.trimmed,
+		reads=rules.trimming_se_merge.output.trimmed,
 		idx=rules.ref_Salmon_index.output,
 	output:
 		outdir=directory("results/mapping/{ref_name}/se/{sample}.salmon"),
