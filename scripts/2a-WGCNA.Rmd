@@ -27,7 +27,8 @@ options(stringsAsFactors = FALSE) # Set Strings to character
 # WGCNA Analysis
 
 This script is based off of Langfelder P, Horvath S (2008) WGCNA: an R package for weighted correlation network analysis. BMC Bioinformatics 2008, 9:559 ([link to paper](http://www.biomedcentral.com/1471-2105/9/559))
-<span style="color:red">Red text</span> indicates regions that require the user to modify.
+
+<span style="color:red">**Red text**</span> indicates regions that require the user to modify.
 Regardless, the user should check over all code blocks to ensure that everything is running correctly.
 
 
@@ -36,18 +37,14 @@ Regardless, the user should check over all code blocks to ensure that everything
 
 Load packages
 ```{r load_packages, message=FALSE, warning=FALSE}
-library(tidyverse, quietly = TRUE)
-library(genefilter, quietly = TRUE)
-library(edgeR, quietly = TRUE)
-library(RColorBrewer, quietly = TRUE)
-library(WGCNA, quietly = TRUE)
-library(flashClust, quietly = TRUE)
-library(gridExtra, quietly = TRUE)
-library(ComplexHeatmap, quietly = TRUE)
-library(goseq, quietly = TRUE)
-library(dplyr, quietly = TRUE)
-library(clusterProfiler, quietly = TRUE)
-library(simplifyEnrichment, quietly = TRUE)
+library(tidyverse)
+library(genefilter)
+library(edgeR)
+library(RColorBrewer)
+library(WGCNA)
+library(ComplexHeatmap)
+library(plotly)
+library(flashClust)
 ```
 
 
@@ -63,12 +60,14 @@ gcount.file <- "salmon.numreads.tsv"
 WGCNA_results.file <- "salmon.numreads.WGCNA_results.tsv"
 WGCNA_samples.file <- "salmon.numreads.WGCNA_samples.tsv"
 
-# pOverA gene filtering thresholds (only process genes with over these cutoffs)
+# pOverA gene filtering thresholds
+#  - We will only process genes with over these cutoffs.
+#  - These cutoffs are only applied after selection for just the samples that we want to test (i.e., not the whole dataset)
 pOverA.cutoff.P <- 0.8 # >80% of samples
 pOverA.cutoff.A <- 10  # >10 read counts
 
 # Column name to use for analysis of data using WGCNA
-group <- "group"
+group <- "Group"
 
 # Minimum module size - I chose 30 as it is the default value chosen by most studies using WGCNA.
 minModuleSize <- 30
@@ -117,8 +116,9 @@ if( all(headers %in% colnames(gcount)) ){
 }
 
 # Cleanup gcount data
-gcount <- gcount %>% 
+gcount <- gcount %>%
   column_to_rownames("Name") %>% # Makes "Name" column rownames
+  replace(is.na(.), 0) %>% # Replace missing values with zero
   round() %>% # Round
   select(treatmentinfo$sample_id) # Select just columns in filtered treatmentinfo file
 
@@ -128,7 +128,7 @@ head(gcount)[,1:3]
 ```
 
 
-Filter `gcount` to just genes with enough data across columns (exclude genes which are mostly zeros)
+Filter `gcount` to just genes with enough data across columns (exclude genes which are mostly zeros).
 ```{r filter_gcount}
 # Create filter for the counts data
 filt <- filterfun(pOverA(pOverA.cutoff.P, pOverA.cutoff.A))
@@ -139,40 +139,38 @@ keep <- gcount[gfilt,]
 keep <- rownames(keep)
 # Gene count data filtered in PoverA, P percent of the samples have counts over A
 gcount_filt <- as.data.frame(gcount[which(rownames(gcount) %in% keep),])
-d <- dim(gcount);      print(paste("gcount      - rows:",d[[1]]," columns:",d[[2]], sep='')) # Before filtering
-d <- dim(gcount_filt); print(paste("gcount_filt - rows:",d[[1]]," columns:",d[[2]], sep='')) # After filtering
+d1 <- dim(gcount);      print(paste("gcount      - rows:",d1[[1]]," columns:",d1[[2]], sep='')) # Before filtering
+d2 <- dim(gcount_filt); print(paste("gcount_filt - rows:",d2[[1]]," columns:",d2[[2]], sep='')) # After filtering
+print(paste("gcount_filt - rows:",round((d2[[1]]/d1[[1]])*100, 2),"% of original", sep='')) # After filtering
 ```
 
-
-Determine library size.
-```{r libsize}
-libSize.df <- data.frame(libSize=colSums(gcount_filt))
-```
 
 Make DGE object.
 ```{r make_DGE_object}
 DGEdat <- DGEList(counts=as.matrix(gcount_filt),
                   samples=treatmentinfo,
                   group=treatmentinfo[[group]])
-dim(DGEdat$counts)
 ```
 
 
 
-##  4. Data normalization  
+##  4. Data normalization 
+
+If the min and max norm factors are very very small <<0.5 or very very large >>2, then that indicates that you have large differences in the sizes of your libraries. This could cause issues downstream as the very small libraries will suffer from dropout and the large ones from a large number of low abundance features.
 ```{r norm_data}
 DGEdat <- calcNormFactors(DGEdat)
-head(DGEdat$samples)
+print(paste("MIN norm factor: ", min(DGEdat$samples$norm.factors), sep=''))
+print(paste("MAX norm factor: ", max(DGEdat$samples$norm.factors), sep=''))
 ```
 
 
 
 ## 5. Plot global gene expression  
 
-Log transform the counts matrix for the next plots
+Log transform the counts matrix for the next few plots.
 ```{r log_transform}
 DGEdat.cpm <- DGEdat # Make a copy the edgeR dataset
-DGEdat.cpm$counts <- cpm(DGEdat.cpm$counts, log=TRUE, prior.count=5) # Log transform the copy for the next plots
+DGEdat.cpm$counts <- cpm(DGEdat.cpm$counts, log=TRUE, prior.count=2) # Log2 transform the copy for the next plots
 ```
 
 
@@ -187,37 +185,50 @@ colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255) # Assign colors
 pheatmap(gsampleDistMatrix_dev, # Plot matrix
          clustering_distance_rows=gsampleDists_dev, # Cluster rows
          clustering_distance_cols=gsampleDists_dev, # Cluster columns
-         col=colors) # Set colors
+         col=colors, # Set colors
+         fontsize = 3)
 ```
 
 
 ### Principal component plot of samples
 
 ```{r plot_PCA_of_samples}
-pca <- prcomp(t(DGEdat.cpm$counts)) # Calculate eigengenes
-pc.data <- summary(out<-prcomp(t(DGEdat.cpm$counts))); pc.data
+# Calculate eigengenes and plot results
+pca <- prcomp(t(DGEdat.cpm$counts))
+pc.data <- summary(out<-prcomp(t(DGEdat.cpm$counts)))
 plot(out)
 
-#DGEdat.cpm$samples$timepoint <- gsub("TP", "", DGEdat.cpm$samples$timepoint)
+# Scree plot
+var_explained = pca$sdev^2 / sum(pca$sdev^2) # Calculate total variance explained by each principal component
+qplot(c(1:20), var_explained[1:20]) + 
+  geom_line() +
+  geom_point(size=4) +
+  xlab("Principal Component") + 
+  ylab("Variance Explained") +
+  ggtitle("Scree Plot") +
+  ylim(0, 1) +
+  theme_classic()
+
+# Format data for plotting
 DGEdat_PCcor <- lapply(DGEdat.cpm$samples, as.factor)
-#DGEdat_PCcor <- as.tibble(lapply(DGEdat_PCcor, as.numeric))
-DGEdat_PCcor <- as.tibble(DGEdat_PCcor)
+DGEdat_PCcor <- as_tibble(lapply(DGEdat_PCcor, as.numeric))
+DGEdat_PCcor <- as_tibble(DGEdat_PCcor)
 DGEdat_PCcor <- cbind(DGEdat.cpm$samples$lib.size, DGEdat_PCcor)
 rownames(DGEdat_PCcor) <- DGEdat.cpm$samples$sample_id
 
-# Make a dataframe containing all plotting info
+# Make a data.frame containing all plotting info
 percentVar <- pca$sdev^2/sum(pca$sdev^2) # Save % variation by PC1 and PC2
 d <- data.frame(PC1 = pca$x[, 1], 
                 PC2 = pca$x[, 2],
-                Group = DGEdat.cpm$samples[[group]],
+                group = DGEdat.cpm$samples[[group]],
                 DGEdat.cpm$samples, name = colnames(DGEdat.cpm$counts)
               )
 
-allgenes_PCA <- ggplot(data = d, aes_string(x = "PC1", y = "PC2", colour = "Group")) + # NOTE: can add 'shape' to be appropriate metadata column to add extra info
+allgenes_PCA <- ggplot(data = d, aes(x = PC1, y = PC2, colour = group)) + # NOTE: can add 'shape' to be appropriate metadata column to add extra info
   geom_point(size = 3) + 
   xlab(paste0("PC1: ", round(percentVar[1] * 100), "% variance")) + 
   ylab(paste0("PC2: ", round(percentVar[2] * 100), "% variance")) + 
-  coord_fixed() + 
+  coord_fixed() +
   theme_bw() + # Set background color
   theme(panel.border = element_blank(), # Set border
         panel.grid.major = element_blank(), # Set major gridlines
@@ -227,6 +238,7 @@ allgenes_PCA <- ggplot(data = d, aes_string(x = "PC1", y = "PC2", colour = "Grou
         axis.title = element_text(size = 14), # Axis title size
         axis.text = element_blank()) # Axis text size and view plot
 allgenes_PCA
+ggplotly(allgenes_PCA, width = 1000, height = 1000)
 ```
 
 
@@ -273,16 +285,24 @@ print(paste("Number genes after filtering:  ", ncol(datExpr), sep='')) # Number 
 sampleTree = hclust(dist(datExpr), method = "average");
 # Plot the sample tree: Open a graphic output window of size 12 by 8 inches
 # The user should change the dimensions if the window is too large or too small.
-plot(sampleTree, main = "Sample clustering to detect outliers", sub="", xlab="", cex.lab = 1.5, cex.axis = 1.5, cex.main = 2)
+plot(sampleTree, 
+     main="Sample clustering to detect outliers", 
+     sub="",
+     xlab="",
+     cex=0.5, # Tip label size
+     cex.lab=1.5,
+     cex.axis=1.5,
+     cex.main=2)
 ```
 
 
 <span style="color:red">**Exclude selected samples.**</span>
-We will exlcude Pacuta_HTHC_TP11_1416 and Pacuta_HTAC_TP9_1302 because they appear to be outliers on the dendrogram.
-```{r remove_outliers}
+We will exclude `Lac_D_TP1_LD1B` and `Glu_D_TP3_GD3B` because they appear to be outliers on the dendrogram.
+```{r remove_outliers_1}
 print(paste("Number samples before outlier removal: ", nrow(datExpr), sep='')) # Number samples before
-
-row_names_df_to_remove<-c("Pacuta_HTHC_TP11_1416", "Pacuta_HTAC_TP9_1302") # Picked from above plot
+```
+```{r remove_outliers_2}
+row_names_df_to_remove<-c("Lac_D_TP1_LD1B", "Glu_D_TP3_GD3B") # Picked from above plot
 datExpr <- (datExpr[!(row.names(datExpr) %in% row_names_df_to_remove),])
 treatmentinfo <- (treatmentinfo[!(treatmentinfo$sample_id %in% row_names_df_to_remove),])
 
@@ -298,14 +318,12 @@ print(paste("Number samples after outlier removal:  ", nrow(datExpr), sep='')) #
 The soft thresholding power (β) is the number to which the co-expression similarity is raised to calculate adjacency. The function pickSoftThreshold performs a network topology analysis. The user chooses a set of candidate powers, however the default parameters are suitable values.
 ```{r pick_soft_threshold}
 # Choose a set of soft-thresholding powers
-powers <- c(seq(from = 1, to=10, by=0.5)) # Create a string of numbers from 1 through 10, increasing my 0.5 incraments
+powers <- c(seq(from = 1, to=20, by=0.5)) # Create a string of numbers from 1 through 10, increasing my 0.5 incraments
 
 # Call the network topology analysis function
 sft <-pickSoftThreshold(datExpr, powerVector = powers, verbose = 5)
-```
 
-Plot the results.
-```{r plot_soft_power}
+# Plot the results.
 sizeGrWindow(9, 5)
 par(mfrow = c(1,2));
 cex1 = 0.9;
@@ -335,12 +353,11 @@ text(sft$fitIndices[,1], sft$fitIndices[,5],
      col="red"
     )
 ```
-<span style="color:red">**Select best soft power threshold using the above plot.**
-I used a scale-free topology fit index **R^2 of 0.831**. This lowest recommended R^2 by Langfelder and Horvath is 0.8. I chose 0.83 because we want to use the smallest soft thresholding power that maximizes with model fit. It appears that our **soft thresholding power is 3.5** because it is the lowest power before the R^2=0.8 threshold that maximizes with model fit.</span>
+<span style="color:red">**Select best soft power threshold using the above plot.**</span> Ideally, it should be the point right before where the points plateau (if such an obvious feature exists). When picking a soft power, Langfelder and Horvath recommended a minimum R^2 of 0.8 (red line in plot; look at the `SFT.R.sq` column in the table above). If your plateau is above this point, then your data has a good level of uniformity and you should get robust modules.
 
-Set softPower
+Sometimes your data doesn't look great in the plot and it is hard to pick a soft power threshold. In this case try and pick the soft power that looks most like it is just before the plateau, no matter how hard that might be, and irrespective of how far from the R^2 0.8 cutoff it is. This might require adjusting the powers tested by the `powers` variable - you can focus on a narrow window of values (from 1->20 to 6->10) and use a smaller step size (from 0.5 to 0.1) to help you narrow down on the best value.
 ```{r set_softPower}
-softPower <- 3.5
+softPower <- 8.5
 ```
 
 
@@ -349,7 +366,8 @@ softPower <- 3.5
 
 ### Co-expression adjacency and topological overlap matrix similarity
 
-The next few steps may need to be executed on a supercomputer as our dataset is too large for most standard laptops to handle.
+The next few steps may need to be executed on a supercomputer if the dataset is too large for your machine.
+If so, uncomment the code below to export the required data objects to a file, copy the file to your larger machine (i.e., HPC server), and them load them back into R on the larger machine. 
 ```{r save_load_WGCNA_RData_start}
 # Save data (on local machine)
 #save(datExpr, file = "2a-WGCNA.RData")
@@ -359,10 +377,9 @@ The next few steps may need to be executed on a supercomputer as our dataset is 
 ```
 
 
-**May have to execute an the HPC server**  
-Co-expression similarity and adjacency, using the soft thresholding power saved in `softPower` and translate the adjacency into topological overlap matrix to calculate the corresponding dissimilarity. I will use a **signed network**. https://peterlangfelder.com/2018/11/25/__trashed/
+Co-expression similarity and adjacency, using the soft power threshold saved in `softPower` and translate the adjacency into topological overlap matrix to calculate the corresponding dissimilarity. I will use a **signed network**: https://peterlangfelder.com/2018/11/25/__trashed/
 ```{r coexpr_and_adjacency}
-adjacency <- adjacency(datExpr, power=softPower,type="signed") # Calculate adjacency
+adjacency <- adjacency(datExpr, power=softPower, type="signed") # Calculate adjacency
 TOM <- TOMsimilarity(adjacency, TOMType = "signed") # Translate adjacency into topological overlap matrix
 dissTOM <- 1-TOM # Calculate dissimilarity in TOM
 ```
@@ -383,7 +400,7 @@ plot(geneTree, xlab="", sub="", main="Gene Clustering on TOM-based dissimilarity
 ### Module identification using dynamicTreeCut
 
 Module identification is essentially cutting the branches off the tree in the dendrogram above. We like large modules, so we set the **minimum module size** (`minModuleSize` at the top of script) relatively high. 30 is a good starting point.
-Module 0 is reserved for unassigned genes. The are other modules will be listed largest to smallest.
+Module 0 is reserved for unassigned genes. The other modules will be listed largest to smallest.
 ```{r module_identification}
 dynamicMods <- cutreeDynamic(dendro = geneTree,
                              distM = dissTOM,
@@ -419,7 +436,7 @@ plotDendroAndColors(geneTree, dynamicColors, "Dynamic Tree Cut", dendroLabels = 
 Plot module similarity based on eigengene value.
 ```{r plot_eigengene_value_similarity}
 # Calculate eigengenes
-MEList = moduleEigengenes(datExpr, colors = dynamicColors, softPower = 4.5)
+MEList = moduleEigengenes(datExpr, colors = dynamicColors, softPower = softPower)
 MEs = MEList$eigengenes
 
 # Calculate dissimilarity of module eigengenes
@@ -429,7 +446,7 @@ MEDiss = 1-cor(MEs)
 METree = flashClust(as.dist(MEDiss), method = "average")
 
 plot(METree, main = "Clustering of module eigengenes", xlab = "", sub = "")
-ncol(MEs)
+print(paste("Number of clustered modules: ", ncol(MEs), sep=''))
 ```
 
 
@@ -438,7 +455,7 @@ ncol(MEs)
 
 ### Quantifying module–trait associations
 
-Prepare trait data. Data has to be numeric, so I will substitute time_points and type for numeric values.
+Prepare trait data. Data has to be numeric, so we will substitute `group` for numeric values.
 ```{r make_wide_treatment_dataframe}
 treatmentinfo$num <- c("1")
 allTraits <- as.data.frame(pivot_wider(treatmentinfo, names_from = !!rlang::sym(group), values_from = num, id_cols = sample_id))
@@ -487,7 +504,7 @@ labeledHeatmap(Matrix = moduleTraitCor,
                colors = blueWhiteRed(50),
                textMatrix = textMatrix,
                setStdMargins = TRUE,
-               cex.text = 0.25,
+               cex.text = 0.10, # Adjust the size of text inside the heatmap
                textAdj = 0,
                zlim = c(-1,1),
                main = paste("Module-trait relationships")
@@ -495,7 +512,7 @@ labeledHeatmap(Matrix = moduleTraitCor,
 ```
 
 
-Represent module trait correlations as a complexHeatmap
+Represent module trait correlations as a `complexHeatmap`.
 ```{r plot_module_trait_complexHeatmap}
 # Create list of p-values for eigengene correlation with specific life stages
 heatmappval <- signif(moduleTraitPvalue, 1)
@@ -504,27 +521,27 @@ heatmappval <- signif(moduleTraitPvalue, 1)
 htmap.colors <- names(MEs)
 htmap.colors <- gsub("ME", "", htmap.colors)
 
-ht=Heatmap(moduleTraitCor,
-           name = "Eigengene",
-           column_title = "Module-Trait Eigengene Correlation",
-           col = blueWhiteRed(50),
-           row_names_side = "left", row_dend_side = "left",
-           width = unit(5, "in"), height = unit(8.5, "in"),
-           column_order = 1:ncol(moduleTraitCor),
-           column_dend_reorder = TRUE,
-           cluster_columns = hclust(dist(t(moduleTraitCor)), method = "average"),
-           column_dend_height = unit(0.5, "in"),
-           cluster_rows = METree, row_gap = unit(2.5, "mm"), border = TRUE,
-           cell_fun = function(j, i, x, y, w, h, col) {
-           if(heatmappval[i, j] <= 0.05) {
-               grid.text(sprintf("%s", heatmappval[i, j]), x, y, gp = gpar(fontsize = 8, fontface = "bold"))
-           } else {
-               grid.text(sprintf("%s", heatmappval[i, j]), x, y, gp = gpar(fontsize = 8, fontface = "plain"))
-           }},
-           column_names_gp =  gpar(fontsize = 10),
-           row_names_gp = gpar(fontsize = 10, alpha = 0.75, border = TRUE, fill = htmap.colors)
-          )
-draw(ht)
+Heatmap(moduleTraitCor,
+        name = "Eigengene",
+        column_title = "Module-Trait Eigengene Correlation",
+        col = blueWhiteRed(50),
+        row_names_side = "left", row_dend_side = "left",
+        width = unit(5, "in"), height = unit(3, "in"), # Adjust if plot is off page - smaller numbers = smaller plot
+        column_order = 1:ncol(moduleTraitCor),
+        column_dend_reorder = TRUE,
+        cluster_columns = hclust(dist(t(moduleTraitCor)), method = "average"),
+        column_dend_height = unit(0.5, "in"),
+        cluster_rows = METree, row_gap = unit(2.5, "mm"), border = TRUE,
+        cell_fun = function(j, i, x, y, w, h, col) {
+        if(heatmappval[i, j] <= 0.05) {
+           grid.text(sprintf("%s", heatmappval[i, j]), x, y, gp = gpar(fontsize = 4, fontface = "bold"))  # `fontsize` for cell text
+        } else {
+           grid.text(sprintf("%s", heatmappval[i, j]), x, y, gp = gpar(fontsize = 4, fontface = "plain")) # `fontsize` for cell text
+        }},
+        column_names_gp =  gpar(fontsize = 10),
+        row_names_gp = gpar(fontsize = 4, # Row name text size
+                            alpha = 0.75, border = TRUE, fill = htmap.colors)
+)
 ```
 
 
@@ -537,7 +554,6 @@ Define variable weight containing the weight column of datTrait.
 ```{r extract_trait_of_interest}
 trait <- as.data.frame(as.numeric(as.factor(treatmentinfo[[group]]))) 
 names(trait) = "group"
-dim(trait)
 ```
 
 Colors of the modules.
@@ -561,7 +577,7 @@ names(GSPvalue) <- paste("p.GS.", names(trait), sep="")
 
 ## 12. Summary output of network analysis results
 
-Create the starting data frame.
+Create the starting data.frame.
 ```{r combined_dataframe}
 geneInfo0 = data.frame(
   gene_id = names(datExpr),
@@ -580,17 +596,16 @@ modOrder = order(-abs(cor(MEs, trait, use = "p")))
 
 Add module membership information in the chosen order.
 ```{r add_MM_info}
-for (mod in 1:ncol(geneModuleMembership))
-{
+for (mod in 1:ncol(geneModuleMembership)) {
   oldNames = names(geneInfo0)
   geneInfo0 = data.frame(geneInfo0, 
                          geneModuleMembership[, modOrder[mod]],
                          MMPvalue[, modOrder[mod]]
-                         )
+                        )
   names(geneInfo0) = c(oldNames, 
                        paste("MM.", modNames[modOrder[mod]], sep=""),
                        paste("p.MM.", modNames[modOrder[mod]], sep="")
-                       )
+                      )
 }
 ```
 

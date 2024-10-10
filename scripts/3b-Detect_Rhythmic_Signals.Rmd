@@ -1,0 +1,171 @@
+---
+title: "Detect Rhythmic Signals"
+author: "Expression_Quant"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    keep_md: yes
+---
+
+
+
+```{r setup, include=FALSE}
+# The following setting is important, do not omit.
+knitr::opts_chunk$set(echo = TRUE,
+                      fig.height = 8,
+                      fig.width = 12,
+                      dev = c("png", "pdf"),
+                      dpi = 1000)
+options(scipen = 999) # Prevent scientific notation
+rm(list = ls()) # Clear environment
+```
+
+*Note: Open scripts.Rproj first, then script. To easily use relative paths, click the down button next to knit and then click "Knit Directory --> Project Directory". This should make loading and saving files much easier.*
+
+
+
+# Detect Rhythmic Signals
+
+Detect rhythmic signals using the `MetaCycle` package.
+
+<span style="color:red">**Red text**</span> indicates regions that require the user to modify.
+Regardless, the user should check over all code blocks to ensure that everything is running correctly.
+
+
+
+## 1. Load packages
+
+Load packages.
+```{r load_packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(MetaCycle)
+```
+
+
+
+## 2. Set variables
+
+<span style="color:red">**Change file names and conditions where appropriate.**</span>
+```{r variables}
+# Input unfiltered data
+treatmentinfo.file <- "samples.tsv"
+gcount.file <- "salmon.tpm.tsv"
+# Output MetaCycle results
+rhythmic_results.file <- "salmon.numreads.rhythmic_gene_results.tsv"
+rhythmic_results.sig.file <- "salmon.numreads.rhythmic_gene_results_significant.tsv"
+
+# MetaCycle - expected period (24 = diurnal)
+expected.period.length <- 24
+expected.period.dev <- 4 # Allowed deviation from `expected.period.length` 20 -> 28
+
+# Treatment condition column and treatments to include in analysis
+condition <- "Group"
+treatments.to.compare <- c("CTRL")
+
+# pOverA gene filtering thresholds
+#  - We will only process genes with over these cutoffs.
+#  - These cutoffs are only applied after selection for just the samples that we want to test (i.e., not the whole dataset)
+pOverA.cutoff.P <- 0.8 # >80% of samples
+pOverA.cutoff.A <- 10  # >10 read counts
+
+# Adjusted p-value cutoff for rhythmic genes
+rhythmic.pvalue.cutoff <- 0.05
+```
+
+
+
+## 3. Load, clean, and pre-processing datasets
+
+Load the input file containing the treatment information.
+```{r load_treatmentinfo}
+treatmentinfo <- read.csv(treatmentinfo.file, header = TRUE, sep = "\t", fileEncoding="UTF-8-BOM") # Read in file
+head(treatmentinfo)
+
+# Check we have the right column names
+headers <- c("sample_id", condition)
+if( all(headers %in% colnames(treatmentinfo)) ){
+  cat(paste(treatmentinfo.file, "has the required columns:", paste(headers, collapse=', ')))
+} else {
+  stop(paste(treatmentinfo.file, "is missing required columns:", paste(headers, collapse=', ')))
+}
+```
+
+
+Filter `treatmentinfo` to just the samples that we want to analyze.
+<span style="color:red">**Adjust filtering as required.**</span>
+```{r filter_treatmentinfo}
+treatmentinfo <- treatmentinfo %>%
+  filter(!!rlang::sym(condition) %in% treatments.to.compare) %>%
+  mutate({{condition}} := factor(!!rlang::sym(condition), levels = treatments.to.compare))
+head(treatmentinfo)
+```
+
+
+Load the input file containing the gene count matrix.
+```{r load_gcount}
+gcount <- as.data.frame(read.csv(gcount.file, header = TRUE, sep = "\t", fileEncoding="UTF-8-BOM")) # Read in file
+
+# Check we have the right column names
+headers <- c("Name", treatmentinfo$sample_id)
+if( all(headers %in% colnames(gcount)) ){
+  cat(paste(gcount.file, "has the required columns:", paste(headers, collapse=', ')))
+} else {
+  stop(paste(gcount.file, "is missing required columns:", paste(headers, collapse=', ')))
+}
+
+# Cleanup gcount data
+gcount <- gcount %>%
+  column_to_rownames("Name") %>% # Makes "Name" column rownames
+  replace(is.na(.), 0) %>% # Replace missing values with zero
+  round() %>% # Round
+  select(treatmentinfo$sample_id) # Select just columns in filtered treatmentinfo file
+
+# View dataset attributes
+d <- dim(gcount); print(paste("rows:",d[[1]]," columns:",d[[2]], sep=''))
+head(gcount)[,1:3]
+```
+
+
+
+## 4. Run Rhythmic Signal Detection
+
+Run `meta2d` to select best algorithm to use for analysis.
+```{r run_MetaCycle_pairs}
+# Get the times of each sample in the same order as the columns in `gcount`
+times <- treatmentinfo$Time_hrs
+names(times) <- treatmentinfo$sample_id
+timev <- times[colnames(gcount)]
+names(timev) <- NULL
+
+# Make `gcount` row names a column - required for `meta2d`
+testD <- gcount %>% rownames_to_column("gene_id")
+
+# Run Metacycle
+cyc <- meta2d(inDF=testD, timepoints=timev,
+              infile="csv", filestyle="csv",
+              minper=(expected.period.length - expected.period.dev),
+              maxper=(expected.period.length + expected.period.dev),
+              ARSdefaultPer=expected.period.length,
+              outputFile=FALSE, outRawData=TRUE
+             )
+
+# Print significant count
+cyc.sig.meta <- cyc$meta[cyc$meta$LS_BH.Q < rhythmic.pvalue.cutoff, ]
+print(paste("Num significant genes: ", nrow(cyc.sig.meta), sep=''))
+
+# Write all results to file
+write.table(cyc$meta, rhythmic_results.file, sep='\t', row.names=F, quote=F)
+
+# Write significant results to file
+write.table(cyc.sig.meta, rhythmic_results.sig.file, sep='\t', row.names=F, quote=F)
+```
+
+
+
+## 5. Session Info
+
+```{r ressionInfo}
+sessionInfo()
+```
+
+

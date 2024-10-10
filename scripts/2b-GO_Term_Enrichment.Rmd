@@ -26,8 +26,9 @@ rm(list = ls()) # Clear environment
 
 # GO Term and KEGG Enrichment Analysis
 
-Run GO Term enrichment analysis using results from WGCNA analysis (i.e., after running the `2a-WGCNA.Rmd` script).
-<span style="color:red">Red text</span> indicates regions that require the user to modify.
+Run GO and KO (KEGG Orthology) Term enrichment analysis using results from WGCNA analysis (i.e., after running the `2a-WGCNA.Rmd` script).
+
+<span style="color:red">**Red text**</span> indicates regions that require the user to modify.
 Regardless, the user should check over all code blocks to ensure that everything is running correctly.
 
 
@@ -36,12 +37,10 @@ Regardless, the user should check over all code blocks to ensure that everything
 
 Load packages
 ```{r load_packages, message=FALSE, warning=FALSE}
-library(goseq)
 library(tidyverse)
+library(goseq)
 library(GSEABase)
 library(data.table)
-library(ggplot2)
-library(cowplot)
 library(patchwork)
 ```
 
@@ -51,16 +50,24 @@ library(patchwork)
 
 <span style="color:red">**Change file names and conditions where appropriate.**</span>
 ```{r variables}
-# Input unfiltered data
+# Input WGCNA results + GO and KO annotations
 treatmentinfo.file <- "salmon.numreads.WGCNA_samples.tsv"
 wgcna_results.file <- "salmon.numreads.WGCNA_results.tsv"
-annotation.file <- "Pocillopora_acuta_KBHIv2.pep.GOs.tsv"
+annotation.file <- "Gsulp_5572.genes.annots.tsv"
 
 # Output DEG results
 GO_term_sig.file <- "salmon.numreads.WGCNA_results.GOsig.tsv"
 KEGG_sig.file <- "salmon.numreads.WGCNA_results.KEGGsig.tsv"
 
-# Cutoff for significant GO term p-values
+# Delimiter between GO and KO identifiers
+GO.annot.split <- ","
+KO.annot.split <- ","
+
+# List of (one or multiple) modules that we want to perform enrichment analysis on (compared to all genes)
+#  - Performs analysis on all genes in provided modules at the same time, not each module separately.
+modules.to.analyze <- c("red", "royalblue")
+
+# Cutoff for significant GO and KO term p-values
 GO_enrich_pvalue.cutoff <- 0.05
 KEGG_enrich_pvalue.cutoff <- 0.05
 
@@ -105,7 +112,7 @@ Filter `wgcna_results` to just the module that we want to analyze.
 <span style="color:red">**Adjust filtering as required.**</span>
 ```{r filter_treatmentinfo}
 wgcna_results <- wgcna_results %>%
-  filter(moduleColor %in% c("darkred"))
+  filter(moduleColor %in% modules.to.analyze)
 head(wgcna_results)
 ```
 
@@ -129,19 +136,19 @@ Go.ref <- subset(annot, select= c(gene_id, length))
 # Merge wgcna_results by available annotations
 Go.ref <- merge(wgcna_results, Go.ref, by = "gene_id")
 Go.ref <- unique(Go.ref)
-dim(Go.ref)
+d1 <- dim(Go.ref); print(paste("Diff. Expr. Genes - rows:",d1[[1]]," columns:",d1[[2]], sep=''))
 ```
 
 
-Set ID and gene length vectors, and make a binary matrix indicating which genes are differentially expressed. These are used as input to nullp, which for calculates a Probability Weighting Function for DEGs.
+Set ID and gene length vectors, and make a binary matrix indicating which genes are differentially expressed. These are used as input to nullp, which calculates a Probability Weighting Function for DEGs.
 ```{r probability_weighting_function}
 # Make ID and length vectors
 IDvector <- annot$gene_id
 lengthVector <- annot$length
 
 # Get binary list indicating which genes are in WGCNA results and which are not out of all genes
-wgcna.genes <- as.integer(annot$gene_id %in% Go.ref$gene_id)
-names(wgcna.genes) <- annot$gene_id
+wgcna.genes <- as.integer(IDvector %in% Go.ref$gene_id)
+names(wgcna.genes) <- IDvector
 print(paste("Number of WGCNA genes:     ", length(wgcna.genes[wgcna.genes == 1]), sep=''))
 print(paste("Number of NON WGCNA genes: ", length(wgcna.genes[wgcna.genes == 0]), sep=''))
 
@@ -150,18 +157,18 @@ pwf <- nullp(DEgenes=wgcna.genes, id=IDvector, bias.data=lengthVector)
 ```
 
 
-Prepare GO term dataframe.
+Prepare GO term data.frame.
 ```{r prepare_GO_term_dataframe}
 # Cleanup GO terms and split multiple GO terms per line, into one GO term per line
 GO.annot <- annot %>%
   subset(select=c(gene_id, GO_IDs)) %>%
   drop_na() %>% # Remove rows with missing GO terms or gene IDs
   filter(GO_IDs!="-") # Remove rows with missing values indicated by '-'
-splitted <- strsplit(as.character(GO.annot$GO_IDs), "; ") # Split into multiple GO ids
-GO.terms <- data.frame(v1 = rep.int(GO.annot$gene_id, sapply(splitted, length)), v2 = unlist(splitted)) # List all genes with each of their GO terms in a single row
+splitted <- strsplit(as.character(GO.annot$GO_IDs), GO.annot.split) # Split into multiple GO ids
+GO.terms <- data.frame(v1 = rep.int(GO.annot$gene_id, sapply(splitted, length)), v2 = unlist(splitted)) # List all genes with each of their GO terms (one per row)
 colnames(GO.terms) <- c("gene_id", "GO.ID")
 
-# Cleanup single-line GO term dataframe
+# Cleanup single-line GO term data.frame
 GO.terms <- GO.terms %>%
   mutate(GO.ID = gsub(" ", "", GO.ID)) %>% # Remove spaces from GO terms - in case any exist by mistake
   mutate(GO.ID = as.character(GO.ID)) %>%
@@ -185,7 +192,7 @@ GOall <- goseq(pwf, GOref$gene_id, gene2cat=GO.terms, test.cats=c("GO:CC", "GO:B
 Find only enriched GO terms that are statistically significant at cutoff.
 ```{r selected_significant_GOs}
 GOall.filtered <- GOall %>% 
-  filter(over_represented_pvalue < GO_enrich_pvalue.cutoff | under_represented_pvalue < GO_enrich_pvalue.cutoff) %>% # Filter GO enrichment results by p-value
+  filter(over_represented_pvalue < GO_enrich_pvalue.cutoff | under_represented_pvalue < GO_enrich_pvalue.cutoff) %>% # Filter GO enrichment results by p-value (over or under)
   arrange(ontology, over_represented_pvalue, -numDEInCat) %>% # Reorder
   mutate(term = factor(term, levels = unique(term))) %>% # Make 'terms' column a factor
   mutate(dir = if_else(over_represented_pvalue < GO_enrich_pvalue.cutoff, 
@@ -208,7 +215,7 @@ print(paste("Number sig CC terms: ", nrow(filter(GOall.filtered, ontology=="CC")
 ```
 
 
-Correct any un-annotated terms/ontologies.
+View and correct (if you wish) any un-annotated terms/ontologies.
 ```{r list_unannotated}
 NAs.ontology <- GOall.filtered %>% subset(is.na(term))
 NAs.ontology
@@ -247,11 +254,11 @@ slims_mf$category <- row.names(slims_mf) # Save rownames as category
 Get mapped terms, using functions from Sam White's Biostars [post](https://support.bioconductor.org/p/128407/#128409).
 ```{r map_terms}
 # Write function mappedIds to get the query terms that mapped to the slim categories
-mappedIds <-function(df, collection, OFFSPRING) { # The command to run requires a dataframe of slim terms, like slims_MF above, your list of query terms, and the offspring from the GOCollection by goSlim
-  map <- as.list(OFFSPRING[rownames(df)]) # Subset GOcollection offspring by the rownames of your dataframe
+mappedIds <-function(df, collection, OFFSPRING) { # The command to run requires a data.frame of slim terms, like slims_MF above, your list of query terms, and the offspring from the GOCollection by goSlim
+  map <- as.list(OFFSPRING[rownames(df)]) # Subset GOcollection offspring by the rownames of your data.frame
   mapped <- lapply(map, intersect, ids(collection)) # Find the terms that intersect between the subset made above of your query terms and the GOids from the GO collection
   df[["go_terms"]] <- vapply(unname(mapped), paste, collapse = ";", character(1L)) # Add column "go_terms" with matching terms 
-  df # Show resulting dataframe
+  df # Show resulting data.frame
 }
 
 # Run function for MF and BP terms
@@ -260,7 +267,7 @@ MFslim <- mappedIds(slims_mf, MFGO_collection, GOMFOFFSPRING)
 ```
 
 
-Remove duplicate matches, keeping the broader umbrella term
+Remove duplicate matches, keeping the broader umbrella term.
 ```{r clean_mapped_terms}
 # BP
 BPslim <- filter(BPslim, Count>0 & Term!="biological_process") # Filter out empty slims and term "biological process"
@@ -276,7 +283,7 @@ MFslim <- filter(MFslim, Count>0 & Term!="molecular_function") # Filter out empt
 MFsplitted <- strsplit(as.character(MFslim$go_terms), ";") # Split into multiple GO ids
 MFslimX <- data.frame(Term = rep.int(MFslim$Term, sapply(MFsplitted, length)), go_term = unlist(MFsplitted)) # List all
 MFslimX <- merge(MFslimX, MFslim[,c(1,3:4)], by="Term")  # Add back counts, term, and category info
-MFslimX <- unique(setDT(MFslimX)[order(go_term, -Count)], by = "go_term")  # Remove duplicate offspring terms, keeping only
+MFslimX <- unique(setDT(MFslimX)[order(go_term, -Count)], by = "go_term")  # Remove duplicate offspring terms, keeping only those that appear in the larger umbrella term (larger Count number)
 MFslim <- data.frame(slim_term=MFslimX$Term, slim_cat=MFslimX$category, category=MFslimX$go_term) # Rename columns
 head(MFslim)
 ```
@@ -294,9 +301,6 @@ GO.MF <- right_join(MFslim, filter(GOall.filtered, ontology=="MF"), by="category
 
 Plot heatmap of BP and MF GO slim terms.
 ```{r plot_BP_heatmap}
-term_label_text_size <- 6
-slim_label_text_size <- 6
-
 BPplot <- GO.BP %>%
   filter(numInCat>5) %>%
   mutate(term = fct_reorder(term, -over_represented_pvalue)) %>%
@@ -308,11 +312,14 @@ BPplot <- GO.BP %>%
           panel.grid.major = element_blank(),
           panel.grid.minor = element_blank(),
           axis.line = element_line(colour = "black"),
-          strip.text.y = element_text(angle=0, size = slim_label_text_size, face = "bold"),
+          strip.text.y = element_text(angle=0,
+                                      size = 3, # Size of text in boxes on right side
+                                      face = "bold"),
           strip.text.x = element_text(size = 12, face = "bold"),
           axis.title.x = element_blank(),
           axis.title.y = element_text(size=15),
-          axis.text = element_text(size = term_label_text_size), legend.position = "None",
+          axis.text = element_text(size = 1), # Size of text on the left side of plot
+          legend.position = "None",
           plot.margin = unit(c(0,1,0,0.25), "cm")
     ); BPplot
 ```
@@ -335,10 +342,12 @@ MFplot <- GO.MF %>%
           panel.grid.major = element_blank(),
           panel.grid.minor = element_blank(),
           axis.line = element_line(colour = "black"),
-          strip.text.y.left = element_text(angle=0, size = slim_label_text_size, face = "bold"),
+          strip.text.y.left = element_text(angle=0,
+                                           size = 6, # Size of text in boxes on left side
+                                           face = "bold"),
           strip.text.x = element_text(size = 12, face = "bold"),
           axis.title = element_blank(),
-          axis.text = element_text(size = term_label_text_size),
+          axis.text = element_text(size = 4), # Size of text on the right side of plot
           legend.title = element_text(size = 12),
           legend.text = element_text(size = 11)
     ); MFplot
@@ -354,7 +363,7 @@ BPplot + MFplot + plot_annotation(tag_levels = "A", tag_suffix = ")") & theme(pl
 
 ## 6. Kegg enrichment analysis
 
-Select KEGG Orthogroup IDs (KOs) from annotation dataframe.
+Select KEGG Orthogroup IDs (KOs) from annotation data.frame.
 ```{r extract_KO_annots}
 # Extract gene_ids and KO from annotation file
 KO.terms <- annot %>%
@@ -363,22 +372,17 @@ KO.terms <- annot %>%
   filter(KEGG_IDs!="-") # Remove rows with missing values indicated by '-'
 
 # Split multiple KEGG IDs per line into multiple lines
-splitted <- strsplit(as.character(KO.terms$KEGG_IDs), "; ") # Split into multiple KEGG IDs
+splitted <- strsplit(as.character(KO.terms$KEGG_IDs), KO.annot.split) # Split into multiple KEGG IDs
 KO.terms <- data.frame(v1 = rep.int(KO.terms$gene_id, sapply(splitted, length)), v2 = unlist(splitted)) # List all genes with each of their KEGG IDs in a single row
-colnames(KO.terms) <- c("gene_id", "KEGG_IDs")
-
 KO.terms <- unique(KO.terms)
-colnames(KO.terms) <- c("gene_id", "GO.ID")
+colnames(KO.terms) <- c("gene_id", "KEGG.IDs")
 head(KO.terms)
-
-# Bind KO and GO references
-GOKO.terms <- bind_rows(GO.terms, KO.terms)
 ```
 
 
 Perform Kegg enrichment with goseq package.
 ```{r goseq_on_KOs}
-KOall <- goseq(pwf, GOref$gene_id, gene2cat=GOKO.terms, test.cats=c("KEGG"), method="Wallenius", use_genes_without_cat=TRUE)
+KOall <- goseq(pwf, GOref$gene_id, gene2cat=KO.terms, test.cats=c("KEGG"), method="Wallenius", use_genes_without_cat=TRUE)
 ```
 
 
@@ -386,8 +390,7 @@ Extract significantly enriched KEGG terms.
 ```{r selected_significant_KOs}
 KOall.filtered <- KOall %>% 
   filter(over_represented_pvalue < KEGG_enrich_pvalue.cutoff | under_represented_pvalue < KEGG_enrich_pvalue.cutoff) %>% # Filter GO enrichment results by p-value
-  arrange(ontology, over_represented_pvalue, -numDEInCat) %>% # Reorder
-  mutate(term = factor(term, levels = unique(term))) %>% # Make 'terms' column a factor
+  arrange(over_represented_pvalue, -numDEInCat) %>% # Reorder
   mutate(dir = if_else(over_represented_pvalue < GO_enrich_pvalue.cutoff, 
                        "Over", 
                        if_else(under_represented_pvalue < GO_enrich_pvalue.cutoff, 
@@ -395,9 +398,7 @@ KOall.filtered <- KOall %>%
                                "NULL"
                               )
                       )
-        ) %>%
-  mutate(ontology = replace_na(ontology, "KEGG")) %>%
-  filter(ontology=="KEGG")
+        )
 
 # Print stats
 print(paste("Number KEGG IDs BEFORE sig filtering: ", nrow(KOall), sep=''))

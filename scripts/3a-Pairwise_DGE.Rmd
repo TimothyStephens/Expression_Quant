@@ -1,0 +1,242 @@
+---
+title: "Pairwise Differential Gene Expression Analysis"
+author: "Expression_Quant"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    keep_md: yes
+---
+
+
+
+```{r setup, include=FALSE}
+# The following setting is important, do not omit.
+knitr::opts_chunk$set(echo = TRUE,
+                      fig.height = 8,
+                      fig.width = 12,
+                      dev = c("png", "pdf"),
+                      dpi = 1000)
+options(scipen = 999) # Prevent scientific notation
+rm(list = ls()) # Clear environment
+```
+
+*Note: Open scripts.Rproj first, then script. To easily use relative paths, click the down button next to knit and then click "Knit Directory --> Project Directory". This should make loading and saving files much easier.*
+
+
+
+# Differential Gene Expression Analysis
+
+Perform pairwise Differential Gene Expression (DGE) analysis using a read count table (usually from Salmon) and a sample metadata sheet (user made).
+Perform all pairwise DGE analyses, or limit to pairs provided by the user.
+This script will output values for all genes (i.e., no significance filtering is applied) so that the user can filter downstream as needed.
+
+<span style="color:red">**Red text**</span> indicates regions that require the user to modify.
+Regardless, the user should check over all code blocks to ensure that everything is running correctly.
+
+
+
+## 1. Load packages
+
+Load packages.
+```{r load_packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(DESeq2)
+library(genefilter)
+```
+
+
+
+## 2. Set variables
+
+<span style="color:red">**Change file names and conditions where appropriate.**</span>
+```{r variables}
+# Input unfiltered data
+treatmentinfo.file <- "samples.tsv"
+gcount.file <- "salmon.numreads.tsv"
+pairs2run.file <- "samples.pairs2run.tsv"
+# Output DEG results
+DGE_results.file <- "salmon.numreads.pairwise_DGE_results.tsv"
+
+# Treatment condition column
+condition <- "groupName"
+
+# pOverA gene filtering thresholds
+#  - We will only process genes with over these cutoffs.
+#  - These cutoffs are only applied after selection for just the samples that we want to test (i.e., not the whole dataset)
+pOverA.cutoff.P <- 0.4 # >40% of samples
+pOverA.cutoff.A <- 10  # >10 read counts
+```
+
+
+
+## 3. Load, clean, and pre-processing datasets
+
+Load the input file containing the treatment information.
+```{r load_treatmentinfo}
+treatmentinfo <- read.csv(treatmentinfo.file, header = TRUE, sep = "\t", fileEncoding="UTF-8-BOM") # Read in file
+head(treatmentinfo)
+
+# Check we have the right column names
+headers <- c("sample_id", condition)
+if( all(headers %in% colnames(treatmentinfo)) ){
+  cat(paste(treatmentinfo.file, "has the required columns:", paste(headers, collapse=', ')))
+} else {
+  stop(paste(treatmentinfo.file, "is missing required columns:", paste(headers, collapse=', ')))
+}
+```
+
+
+Load the input file containing the gene count matrix.
+```{r load_gcount}
+gcount <- as.data.frame(read.csv(gcount.file, header = TRUE, sep = "\t", fileEncoding="UTF-8-BOM")) # Read in file
+
+# Check we have the right column names
+headers <- c("Name", treatmentinfo$sample_id)
+if( all(headers %in% colnames(gcount)) ){
+  cat(paste(gcount.file, "has the required columns:", paste(headers, collapse=', ')))
+} else {
+  stop(paste(gcount.file, "is missing required columns:", paste(headers, collapse=', ')))
+}
+
+# Cleanup gcount data
+gcount <- gcount %>%
+  column_to_rownames("Name") %>% # Makes "Name" column rownames
+  replace(is.na(.), 0) %>% # Replace missing values with zero
+  round() %>% # Round
+  select(treatmentinfo$sample_id) # Select just columns in filtered treatmentinfo file
+
+# View dataset attributes
+d <- dim(gcount); print(paste("rows:",d[[1]]," columns:",d[[2]], sep=''))
+head(gcount)[,1:3]
+```
+
+
+Load the input file containing the pairs to run, if given.
+```{r load_pairs2run}
+## Function to handle detailed assertions
+assert <- function(x, y, m){
+  mm <- paste("'", paste(x[!x %in% y], collapse=','), "' ", m, ": ", paste(y, collapse=','), sep='')
+  if(! all(x %in% y)){
+    stop(mm)
+  }
+}
+
+## Load treatment to compare - If given, load list of treatments to compare, else create all-vs-all list.
+if(! is.null(pairs2run.file)) { # User has given a samples_combinations_file
+  pairs2run <- as.data.frame(read.csv(pairs2run.file, header = TRUE, sep = "\t", fileEncoding="UTF-8-BOM", stringsAsFactors = FALSE)) # Read in file
+  # Check that the user provided treatments are in the samples_info_file
+  assert(pairs2run$Condition_1, treatmentinfo[, condition], "Treatment(s) in Condition_1 column of pairs2run.file are not in treatmentinfo.file")
+  assert(pairs2run$Condition_2, treatmentinfo[, condition], "Treatment(s) in Condition_2 column of pairs2run.file are not in treatmentinfo.file")
+} else { # Nothing given - Compute All-vs-all comparison
+  tmp.Condition_1 <- c()
+  tmp.Condition_2 <- c()
+  treatments <- unique(treatmentinfo[, condition])
+  for (i in 1:(length(treatments)-1)) {
+    for (j in (i+1):length(treatments)) {
+      tmp.Condition_1 <- c(tmp.Condition_1, treatments[i])
+      tmp.Condition_2 <- c(tmp.Condition_2, treatments[j])
+    }
+  }
+  pairs2run <- data.frame(Condition_1=tmp.Condition_1, Condition_2=tmp.Condition_2)
+}
+
+
+## Check we have the right column names
+headers <- c("Condition_1", "Condition_2")
+if( all(headers %in% colnames(pairs2run)) ){
+  cat(paste(pairs2run.file, "has the required columns:", paste(headers, collapse=', ')))
+} else {
+  stop(paste(pairs2run.file, "is missing required columns:", paste(headers, collapse=', ')))
+}
+
+print("Comparisons to run:")
+print(pairs2run)
+```
+
+
+
+## 4. Run Diff Expr analysis
+
+Run all pairwise comparisons through DESeq2.
+```{r run_DESeq2_pairs}
+write(paste(c("Name", "baseMean", "log2FC", "lfcSE", "stat", "pvalue", "padj", "Condition_1", "Condition_2"), collapse='\t'), file=DGE_results.file, append=FALSE)
+data.rownames <- rownames(gcount)
+for (i in 1:nrow(pairs2run)){
+  
+  ## Get treatments to compare
+  treatments <- pairs2run[i,]
+  Condition_1 <- treatments$Condition_1
+  Condition_2 <- treatments$Condition_2
+  
+  ## Print info of which treatments are being compared
+  print(paste("Comparing treatments ", Condition_1, " **vs** ", Condition_2, sep=''))
+  
+  ## Extract samples for each treatment
+  T1.samples=treatmentinfo[which(treatmentinfo[, condition]==Condition_1),]
+  T2.samples=treatmentinfo[which(treatmentinfo[, condition]==Condition_2),]
+  
+  ## Extract accumulation data for selected samples
+  T1.data <- gcount[,T1.samples$sample_id]
+  T2.data <- gcount[,T2.samples$sample_id]
+  
+  ## Print info of which samples are being compared
+  print(paste("Comparing samples ", paste(colnames(T1.data), collapse=','), " **vs** ", paste(colnames(T2.data), collapse=','), sep=''))
+  
+  ## Create filter for the counts data
+  filt <- filterfun(pOverA(pOverA.cutoff.P, pOverA.cutoff.A))
+  gfilt <- genefilter(T1.data, filt)
+  T1.data.tokeep <- T1.data[gfilt,]
+  
+  filt <- filterfun(pOverA(pOverA.cutoff.P, pOverA.cutoff.A))
+  gfilt <- genefilter(T2.data, filt)
+  T2.data.tokeep <- T2.data[gfilt,]
+  
+  tokeep <- union(rownames(T1.data.tokeep), rownames(T2.data.tokeep))
+  T1.data <- T1.data[tokeep,]
+  T2.data <- T2.data[tokeep,]
+  data <- cbind(T1.data, T2.data)
+  
+  ## Gene count data filtered in PoverA, P percent of the samples have counts over A
+  print(paste("No. genes - before:",nrow(gcount)," after:",nrow(data), " (", round( (nrow(data)/nrow(gcount))*100, 2), "%)", sep=''))
+  
+  ## Create a sample sample design object for each column - “control” (“c”) or “treatment” (“t”)
+  conditions <- c(rep("c", length(colnames(T1.data))), rep("t", length(colnames(T2.data))))
+  coldata <- data.frame(row.names=c(colnames(T1.data), colnames(T2.data)), conditions, stringsAsFactors=TRUE)
+  
+  ## Create "dds" object for DESeq2 - contains count data and condition information
+  dds <- DESeqDataSetFromMatrix(countData=data, colData=coldata, design=~conditions)
+  
+  ## Run DESeq2 - returns normalized expression level in logarithmic base 2 scale
+  results <- results(DESeq(dds))
+  
+  ## Ensure results columns are in the correct order before we append them to output_file
+  results <- results[c("baseMean", "log2FoldChange", "lfcSE", "stat", "pvalue", "padj")]
+  
+  ## Make sure every gene in the input matrix has a line in the results file.
+  results <- as.data.frame(results)
+  results$Name <- rownames(results)
+  results <- merge(data.frame(Name=data.rownames), results, by="Name", all.x=TRUE, all.y=FALSE)
+  
+  ## Add treatments
+  results$Condition_1 <- Condition_1
+  results$Condition_2 <- Condition_2
+  
+  ## Append results to output_file
+  write.table(results, file=DGE_results.file, append=TRUE, quote=FALSE, col.names=FALSE, row.names=FALSE ,sep='\t')
+  
+  ## Print any hidden warnings
+  warnings()
+  cat("\n\n")
+}
+warnings()
+```
+
+
+
+## 5. Session Info
+
+```{r ressionInfo}
+sessionInfo()
+```
+
+

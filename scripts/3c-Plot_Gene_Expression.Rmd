@@ -1,0 +1,465 @@
+---
+title: "Differential Gene Expression Plot Genes"
+author: "Expression_Quant"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    keep_md: yes
+---
+
+
+
+```{r setup, include=FALSE}
+# The following setting is important, do not omit.
+knitr::opts_chunk$set(echo = TRUE,
+                      fig.height = 8,
+                      fig.width = 12,
+                      dev = c("png", "pdf"),
+                      dpi = 1000)
+options(scipen = 999) # Prevent scientific notation
+rm(list = ls()) # Clear environment
+```
+
+*Note: Open scripts.Rproj first, then script. To easily use relative paths, click the down button next to knit and then click "Knit Directory --> Project Directory". This should make loading and saving files much easier.*
+
+
+
+# Pairwise Differential Gene Expression Analysis
+
+Code to plot accumulation values and highlight points with significant differential accumulation.
+
+<span style="color:red">**Red text**</span> indicates regions that require the user to modify.
+Regardless, the user should check over all code blocks to ensure that everything is running correctly.
+
+
+
+## 1. Load packages
+
+Load packages.
+```{r load_packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(reshape2)
+library(cowplot)
+library(ggsignif)
+library(ggpubr)
+```
+
+
+
+## 2. Set variables
+
+<span style="color:red">**Change file names and conditions where appropriate.**</span>
+```{r variables}
+# Input unfiltered data
+treatmentinfo.file <- "samples.tsv"
+gcount.file <- "salmon.tpm.tsv"
+DGE_results.file <- "salmon.numreads.pairwise_DGE_results.tsv" # OPTIONAL: Just put `NULL` if no DEG results.
+
+# Treatment conditions and variables to consider
+condition.to.groupby <- "Group"    # e.g., Amb     - Used for coloring
+condition.x.axis <- "Time_hrs"     # e.g., 12      - Used for spacing of points along x-axis
+condition.persample <- "groupName" # e.g., Amb_12  - Used for separating points and coloring along x-axis
+treatments.to.compare <- c("CTRL", "Glu_D", "Glu_L", "Lac_D", "Lac_L") # In `condition.to.groupby`
+treatment.colors <- c("CTRL"="#33a02c",
+                      "Glu_D"="#fdb462", "Glu_L"="#1f78b4",
+                      "Lac_D"="#fb8072", "Lac_L"="#6a3d9a") # In `condition.to.groupby`
+```
+
+
+
+## 3. Load, clean, and pre-processing datasets
+
+Load the input file containing the treatment information.
+```{r load_treatmentinfo}
+treatmentinfo <- read.csv(treatmentinfo.file, header = TRUE, sep = "\t", fileEncoding="UTF-8-BOM") # Read in file
+head(treatmentinfo)
+
+# Check we have the right column names
+headers <- c("sample_id", condition.to.groupby, condition.x.axis)
+if( all(headers %in% colnames(treatmentinfo)) ){
+  cat(paste(treatmentinfo.file, "has the required columns:", paste(headers, collapse=', ')))
+} else {
+  stop(paste(treatmentinfo.file, "is missing required columns:", paste(headers, collapse=', ')))
+}
+```
+
+
+Filter `treatmentinfo` to just the samples that we want to analyze. Keep commented out if you want to use everything.
+<span style="color:red">**Adjust filtering as required.**</span>
+```{r filter_treatmentinfo}
+#treatmentinfo <- treatmentinfo %>%
+#  filter(!!rlang::sym(condition) %in% treatments.to.compare) %>%
+#  mutate({{condition}} := factor(!!rlang::sym(condition), levels = treatments.to.compare))
+head(treatmentinfo)
+```
+
+
+Load the input file containing the gene count matrix.
+```{r load_gcount}
+gcount <- as.data.frame(read.csv(gcount.file, header = TRUE, sep = "\t", fileEncoding="UTF-8-BOM")) # Read in file
+
+# Check we have the right column names
+headers <- c("Name", treatmentinfo$sample_id)
+if( all(headers %in% colnames(gcount)) ){
+  cat(paste(gcount.file, "has the required columns:", paste(headers, collapse=', ')))
+} else {
+  stop(paste(gcount.file, "is missing required columns:", paste(headers, collapse=', ')))
+}
+
+# Cleanup gcount data
+gcount <- gcount %>%
+  column_to_rownames("Name") %>% # Makes "Name" column rownames
+  replace(is.na(.), 0) %>% # Replace missing values with zero
+  round() %>% # Round
+  select(treatmentinfo$sample_id) # Select just columns in filtered treatmentinfo file
+
+# View dataset attributes
+d <- dim(gcount); print(paste("rows:",d[[1]]," columns:",d[[2]], sep=''))
+head(gcount)[,1:3]
+```
+
+
+Melt and merge `gcount` and `treatmentinfo` into a final cleaned data.frame for plotting.
+<span style="color:red">**Adjust the selected `TimePoints` and `Condition` as required.**</span>
+```{r filter_gcount}
+# Melt accumulation data.frame and merge with sample info. Will produce a data.frame with the following columns:
+# Sample:          Name of sample
+# Name:            Name of gene in sample
+# Accumulation:    Accumulation value of gene in sample
+# TimePoints:      `treatmentinfo` time points to use for x-axis (defined by user)
+# Condition:       `treatmentinfo` variable to group accumulation values by at each time point (defined by user)
+# TimePointLabel:  Label to use above each time point in plot (string; make whatever you want)
+headers <- c("Sample", "Name", "Accumulation", "Condition", "TimePoints", "TimePointLabel")
+
+gcount.merged <- gcount %>%
+  as.matrix() %>%
+  melt() %>% 
+  rename(Name = Var1) %>%
+  rename(Sample = Var2) %>%
+  rename(Accumulation = value) %>%
+  merge(treatmentinfo,
+        by.x = "Sample",
+        by.y = "sample_id") %>%
+  mutate(TimePoints = TimePoint) %>%                                                  # USER ADJUST
+  mutate(Condition = Group) %>%                                                       # USER ADJUST
+  mutate(TimePointLabel = paste("TP", TimePoint, " (", Time_hrs, "hrs)", sep='')) %>% # USER ADJUST
+  select(all_of(headers))
+
+# Check we have the right column names
+if( all(headers %in% colnames(gcount.merged)) ){
+  cat(paste("gcount.merged has the required columns:", paste(headers, collapse=', ')))
+} else {
+  stop(paste("gcount.merged is missing required columns:", paste(headers, collapse=', ')))
+}
+```
+
+
+Load the input file containing the DGE results to add to the plot (if given).
+```{r load_DGE_results}
+if(! is.null(DGE_results.file)) {
+  diffExpr.data <- read.csv(DGE_results.file, header = TRUE, sep = "\t", fileEncoding="UTF-8-BOM") # Read in file
+  
+  # Check we have the right column names
+  headers <- c("Name", "log2FC", "pvalue", "padj", "Condition_1", "Condition_2")
+  if( all(headers %in% colnames(diffExpr.data)) ){
+    cat(paste(DGE_results.file, "has the required columns:", paste(headers, collapse=', ')))
+  } else {
+    stop(paste(DGE_results.file, "is missing required columns:", paste(headers, collapse=', ')))
+  }
+  
+  # Add colors and timepoints to diffExpr results
+  t <- unique(treatmentinfo[, c(condition.persample, "TimePoint")])
+  col <- treatmentinfo[c(condition.persample, condition.to.groupby)] %>%
+    mutate(color = treatment.colors[!!rlang::sym(condition.to.groupby)]) %>%
+    merge(t, by=condition.persample) %>%
+    unique()
+  
+  diffExpr.data <- diffExpr.data %>%
+    merge(col, by.x="Condition_1", by.y=condition.persample) %>%
+    rename(Condition_1.Group = Group) %>%
+    rename(Condition_1.color = color) %>%
+    rename(Condition_1.TimePoint = TimePoint) %>%
+    merge(col, by.x="Condition_2", by.y=condition.persample) %>%
+    rename(Condition_2.Group = Group) %>%
+    rename(Condition_2.color = color) %>%
+    rename(Condition_2.TimePoint = TimePoint)
+  head(diffExpr.data)
+  
+} else {
+  diffExpr.data <- NULL
+}
+```
+
+
+
+## 4. Plot Genes
+
+<span style="color:red">**Adjust the plotting function as required.**</span>
+```{r plot_results}
+plot_results <- function(gene.id){
+##
+## Set envs
+##
+#gene.id <- "Gsulp_5572-G6470.1" # IDs of genes to plot
+cutoff.FC=0.5                   # log2 Fold Change value to use for Up and Down abundance changes [abs(FC) > cutoff.FC]
+cutoff.pvalue=NULL              # *p*-value to use for filtering differential abundance results [padjust < cutoff.pvalue]
+cutoff.padj=0.05                # Adjusted *p*-value to use for filtering differential abundance results [padjust < cutoff.padj]
+plot.colors=treatment.colors    # Colors to use for plotting
+font.family="sans"              # Font family to use in plot
+plot.legend=TRUE                # Add legend to plot?
+with.points=TRUE                # Add replicate points to plot?
+out.prefix=NULL                 # Prefix for output data tables (default: no data tables are output)
+
+jitter.width <- 0.12            # Amount to jitter points over each box
+timepoint.label.size <- 2       # Timepoint label size to use in plot
+y.max.expand <- 1.05            # Expand y-axis by this amount (1.0 = limit is max accumulation value)
+
+gene.id.data   <- gcount.merged %>% filter(Name==gene.id)
+diffExpr.data <- diffExpr.data
+plot.title    <- paste("Expression Results: ", gene.id, sep='')
+xlab          <- "TimePoints"
+ylab          <- "TPM"
+
+signif.offset.x <- 0.1  # signif width of line either side of center
+signif.offset.y <- 0.03 # signif spacing between values along y-axis
+hjust <- 0.5            # signif offset text below bars
+vjust <- 0.5            # signif offset text from center
+textsize <- 2           # signif text size
+
+
+
+##
+## Make sure we know which p-value (normal or adjusted) to filter by
+##
+if(is.null(cutoff.pvalue)){
+  p.column <- "padj"
+  p.cutoff <- cutoff.padj
+} else {
+  p.column <- "pvalue"
+  p.cutoff <- cutoff.pvalue
+}
+
+
+
+##
+## Check that we have data (i.e., gene is in set)
+##
+if(nrow(gene.id.data) == 0){
+  stop(paste(gene.id, "is not in gene set!"))
+}
+# Write data to file if file prefix given
+if(!is.null(out.prefix)){
+  write.table(gene.id.data,
+              file=paste(out.prefix,".ExprData.tsv",sep=''),
+              sep="\t",
+              quote=FALSE,
+              row.names=FALSE,
+              col.names=TRUE)
+}
+
+## Get y-axis max values to set plot limits
+y.min <- 0
+y.max <- max(gene.id.data$Accumulation) * y.max.expand
+if(y.max == 0){
+  y.max <- 1
+}
+
+
+
+##
+## Get DiffExpr results for gene.id for plot
+##
+
+if(! is.null(diffExpr.data)){
+  t.diffExpr <- diffExpr.data %>%
+    filter(abs(log2FC) > cutoff.FC) %>%
+    filter(!!dplyr::sym(p.column) < p.cutoff) %>%
+    filter(Name==gene.id)
+  
+  group.opts <- unique(c(t.diffExpr$Condition_1.Group, t.diffExpr$Condition_2.Group))
+  t <- 1:length(group.opts)
+  names(t) <- group.opts
+  group.opts <- t
+  
+  t <- t.diffExpr %>%
+    filter(Condition_1.TimePoint==Condition_2.TimePoint)
+  
+  t.signif.within <- data.frame(x          =c(t$Condition_1.TimePoint - (signif.offset.x * 2.5)),
+                                xend       =c(t$Condition_1.TimePoint + (signif.offset.x * 2.5)),
+                                y          =c(y.max + ((y.max * signif.offset.y) * group.opts[t$Condition_2.Group])),
+                                annotation =sprintf("FC=%.2f; %s=%.2g", t$log2FC, p.column, t[[p.column]]),
+                                color      =c(t$Condition_2.color)
+  )
+  
+  signif.within <- geom_signif(stat = "identity", inherit.aes = FALSE,
+                data = t.signif.within,
+                aes(x = x,
+                    xend = xend,
+                    y = y,
+                    yend = y,
+                    annotation = annotation,
+                    textsize=textsize,
+                    vjust=vjust),
+                col=t.signif.within$color,
+                angle = 0,
+                hjust=hjust)
+  
+  
+  
+  
+  t <- t.diffExpr %>%
+    filter(Condition_1.TimePoint!=Condition_2.TimePoint) %>%
+    rownames_to_column("rownum") %>%
+    mutate(rownum = as.numeric(rownum))
+  
+  t.signif.across <- data.frame(x          =c(t$Condition_1.TimePoint - (signif.offset.x * 2.5)),
+                                xend       =c(t$Condition_2.TimePoint + (signif.offset.x * 2.5)),
+                                y          =c(y.max + ((y.max * signif.offset.y) * length(group.opts) + 1) + ((y.max * signif.offset.y) * t$rownum)),
+                                annotation =sprintf("FC=%.2f; %s=%.2g", t$log2FC, p.column, t[[p.column]]),
+                                color      =c(t$Condition_2.color)
+  )
+  
+  signif.across <- geom_signif(stat = "identity", inherit.aes = FALSE,
+                data = t.signif.across,
+                aes(x = x,
+                    xend = xend,
+                    y = y,
+                    yend = y,
+                    annotation = annotation,
+                    textsize=textsize,
+                    vjust=vjust),
+                col=t.signif.across$color,
+                angle = 0,
+                hjust=hjust)
+  
+  y.max <- max(t.signif.across$y, t.signif.within$y) * y.max.expand
+}
+
+
+
+
+##
+## Plot samples
+##
+plot.panel.1 <- gene.id.data %>%
+  ggboxplot(x="TimePoints", y="Accumulation", color="Condition") +
+    xlab(xlab) +
+    ylab(ylab) +
+    theme_classic() +
+    theme(plot.title   = element_text(family = font.family, size=8, face="bold"),
+                   axis.text.x  = element_text(family = font.family, size=10),
+                   axis.text.y  = element_text(family = font.family, size=10, margin = margin(t = 0, r = 0, b = 0, l = 10)),
+                   axis.title.x = element_text(family = font.family, size=12, face="bold"),
+                   axis.title.y = element_text(family = font.family, size=12, face="bold"),
+                   legend.text  = element_text(family = font.family, size=4),
+                   legend.position="bottom",
+                   panel.grid.major.x = element_line(linetype = "dashed", colour = "black", linewidth = 0.1),
+                   ) +
+    scale_color_manual(values = plot.colors) +
+    #scale_x_continuous() +
+    scale_y_continuous(limits = c(y.min, y.max), expand = c(0, NA))
+
+
+##
+## Add vertical dashed lines at each time point + timepoint labels
+##
+time <- unique(gene.id.data[, c("TimePoints", "TimePointLabel")])
+time <- time[order(time$TimePoints, decreasing = FALSE),]
+
+plot.panel.1 <- plot.panel.1 +
+  geom_vline(xintercept = time$TimePoints,
+                      linetype = rep("dashed", length(time$TimePoints)))
+
+for(i in 1:nrow(time)) {
+  row <- time[i,]
+  # do stuff with row
+  plot.panel.1 <- plot.panel.1 +
+    geom_text(x = row$TimePoints, y = y.max, label = row$TimePointLabel,
+                       size  = timepoint.label.size,
+                       color = "black",
+                       angle = 0,
+                       vjust = 1.5,
+                       hjust = -0.1
+                      )
+}
+
+
+
+##
+## Plot points
+##
+if(with.points){
+  plot.panel.1 <- plot.panel.1 + geom_point(aes(color = Condition), position = position_jitterdodge(jitter.width=jitter.width))
+}
+
+
+
+##
+## Add DiffExpr results to plot
+##
+if(! is.null(diffExpr.data)){
+  plot.panel.1 <- plot.panel.1 +
+    signif.within +
+    signif.across
+}
+
+
+
+##
+## Plot for full legend
+##
+if(plot.legend) {
+  plot.Legend <- gene.id.data %>%
+    ggplot(aes(x=TimePoints, y=Accumulation, group=interaction(TimePoints, Condition), color=Condition)) +
+    geom_boxplot() +
+    scale_color_manual(values = plot.colors, name = "Treatment") +
+    theme_minimal() +
+    theme(legend.position="right") # Needs to match 'guide-box-right'
+  Legend <- get_plot_component(plot.Legend, 'guide-box-right', return_all = TRUE)
+} else {
+  Legend <- grid.rect(gp=gpar(col="white"))
+}
+
+
+
+##
+## Arrange plots
+##
+p <- ggarrange(plotlist=list(
+  plot.panel.1 + 
+    theme(legend.position = "none"),
+  Legend
+  ),
+  ncol=2,
+  nrow=1,
+  widths = c(6, 0.75),
+  heights = c(6)
+)
+
+## Add title
+p <- annotate_figure(p, top = text_grob(plot.title, 
+               color = "black", face = "bold", size = 14))
+
+## Add white background
+p <- ggdraw(p) +
+  theme(plot.background = element_rect(fill="white", color = NA))
+
+p
+}
+```
+
+
+
+```{r gene_plots}
+plot_results("Gsulp_5572-G6364.1")
+```
+
+
+
+## 6. Session Info
+
+```{r ressionInfo}
+sessionInfo()
+```
+
+

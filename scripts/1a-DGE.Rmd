@@ -27,30 +27,28 @@ rm(list = ls()) # Clear environment
 # Differential Gene Expression Analysis
 
 Perform Differential Gene Expression (DGE) analysis using a read count table (usually from Salmon) and a sample metadata sheet (user made).
-<span style="color:red">Red text</span> indicates regions that require the user to modify.
+
+<span style="color:red">**Red text**</span> indicates regions that require the user to modify.
 Regardless, the user should check over all code blocks to ensure that everything is running correctly.
 
 
 
 ## 1. Load packages
 
-Load packages
+Load packages.
 ```{r load_packages, message=FALSE, warning=FALSE}
-library(edgeR, quietly = TRUE) #edgeR-v3.30.3
-library(vegan, quietly = TRUE)
-library(Dune, quietly = TRUE)
-library(ggplot2, quietly = TRUE) #ggplot2-v3.3.5
-library(tidyverse, quietly = TRUE) #tidyverse-v1.3.1
-library(ComplexHeatmap, quietly = TRUE)
-library(DESeq2, quietly = TRUE)
-library(genefilter, quietly = TRUE)
+library(tidyverse)
+library(genefilter)
+library(DESeq2)
+library(ComplexHeatmap)
+library(plotly)
 ```
 
 
 
 ## 2. Set variables
 
-<span style="color:red">**Change file names and conditions where appropriate.**</span>
+<span style="color:red">**Change file names and condition variables where appropriate.**</span>
 ```{r variables}
 # Input unfiltered data
 treatmentinfo.file <- "samples.tsv"
@@ -60,11 +58,13 @@ DGE_results.file <- "salmon.numreads.DGE_results.tsv"
 DGE_samples.file <- "salmon.numreads.DGE_samples.tsv"
 
 # Treatment conditions and variables to consider
-condition <- "treatment"
-treatments.to.compare <- c("HTAC", "ATAC")
-treatment.colors <- c("ATAC" = "#1b9e77", "HTAC" = "#d95f02")
+condition <- "groupName"
+treatments.to.compare <- c("CTRL_TP10", "Glu_D_TP10")
+treatment.colors <- c("CTRL_TP10" = "#1b9e77", "Glu_D_TP10" = "#d95f02")
 
-# pOverA gene filtering thresholds (only process genes with over these cutoffs)
+# pOverA gene filtering thresholds
+#  - We will only process genes with over these cutoffs.
+#  - These cutoffs are only applied after selection for just the samples that we want to test (i.e., not the whole dataset)
 pOverA.cutoff.P <- 0.8 # >80% of samples
 pOverA.cutoff.A <- 10  # >10 read counts
 
@@ -92,12 +92,12 @@ if( all(headers %in% colnames(treatmentinfo)) ){
 ```
 
 
-Filter `treatmentinfo` to just the samples that we want to analyze.
+Filter `treatmentinfo` to just the samples that we want to analyze/compare.
 <span style="color:red">**Adjust filtering as required.**</span>
 ```{r filter_treatmentinfo}
 treatmentinfo <- treatmentinfo %>%
-  filter(!!rlang::sym(condition) %in% treatments.to.compare & timepoint=="8") %>%
-  mutate({{condition}} := factor(!!rlang::sym(condition), levels = treatments.to.compare))
+  filter(!!rlang::sym(condition) %in% treatments.to.compare) %>% # Filter
+  mutate({{condition}} := factor(!!rlang::sym(condition), levels = treatments.to.compare)) # Make factor for plotting
 head(treatmentinfo)
 ```
 
@@ -115,8 +115,9 @@ if( all(headers %in% colnames(gcount)) ){
 }
 
 # Cleanup gcount data
-gcount <- gcount %>% 
+gcount <- gcount %>%
   column_to_rownames("Name") %>% # Makes "Name" column rownames
+  replace(is.na(.), 0) %>% # Replace missing values with zero
   round() %>% # Round
   select(treatmentinfo$sample_id) # Select just columns in filtered treatmentinfo file
 
@@ -126,7 +127,7 @@ head(gcount)[,1:3]
 ```
 
 
-Filter `gcount` to just genes with enough data across columns (exclude genes which are mostly zeros)
+Filter `gcount` to just genes with enough data across columns (exclude genes which are mostly zeros).
 ```{r filter_gcount}
 # Create filter for the counts data
 filt <- filterfun(pOverA(pOverA.cutoff.P, pOverA.cutoff.A))
@@ -137,8 +138,11 @@ keep <- gcount[gfilt,]
 keep <- rownames(keep)
 # Gene count data filtered in PoverA, P percent of the samples have counts over A
 gcount_filt <- as.data.frame(gcount[which(rownames(gcount) %in% keep),])
-d <- dim(gcount);      print(paste("gcount      - rows:",d[[1]]," columns:",d[[2]], sep='')) # Before filtering
-d <- dim(gcount_filt); print(paste("gcount_filt - rows:",d[[1]]," columns:",d[[2]], sep='')) # After filtering
+
+# Print before vs. after
+d1 <- dim(gcount);      print(paste("gcount      - rows:",d1[[1]]," columns:",d1[[2]], sep='')) # Before filtering
+d2 <- dim(gcount_filt); print(paste("gcount_filt - rows:",d2[[1]]," columns:",d2[[2]], sep='')) # After filtering
+print(paste("gcount_filt - rows:",round((d2[[1]]/d1[[1]])*100, 2),"% of original", sep='')) # After filtering
 ```
 
 
@@ -162,15 +166,15 @@ DEG <- DESeq(gdds)
 ```
 
 
-Explore significant *p*-values for condition pairs
+Explore significant *p*-values for condition pairs.
 ```{r extract_results}
 # Extract DESeq2 results
-DEG.results <- results(DEG, contrast= c(condition, treatments.to.compare), lfcThreshold=lfcThreshold.cutoff)
+DEG.results <- results(DEG, contrast=c(condition, treatments.to.compare), lfcThreshold=lfcThreshold.cutoff)
 head(DEG.results)
 
 # Filter results
 DEGs <- as.data.frame(subset(DEG.results, padj<padj.cutoff))
-nrow(DEGs)
+print(paste("Num DEGs:", nrow(DEGs), sep=''))
 
 # Order p-values by smallest value first
 results.ordered <- order(DEGs$padj)
@@ -178,7 +182,7 @@ results.ordered <- order(DEGs$padj)
 # Make row names a column before writing to file.
 DEGs$gene_id  <- rownames(DEGs)
 rownames(DEGs) <- NULL
-DEGs <- relocate(DEGs, "gene_id", .before="baseMean")
+DEGs <- relocate(DEGs, "gene_id", .before="baseMean") # Make first column
 
 # Write filtered DGE results and samples
 write.table(DEGs, DGE_results.file, sep='\t', row.names=F, quote=F)
@@ -193,14 +197,16 @@ DEGlist <- gdds[DEGs$gene_id, ]
 
 
 
-Apply a variance stabilizing transformation to minimize effects of small counts and normalize by library size
+Apply a variance stabilizing transformation to minimize effects of small counts and normalize by library size.
+If the min and max norm factors are very very small <<0.5 or very very large >>2, then that indicates that you have large differences in the sizes of your libraries. This could cause issues downstream as the very small libraries will suffer from dropout and the large ones from a large number of low abundance features.
 ```{r compute_VST}
 # Get size factor for each sample
 sf <- estimateSizeFactors(gdds)$sizeFactor
-print(paste("Max size factor: ",max(sf), sep=''))
-print(paste("Min size factor: ",min(sf), sep=''))
+sort(sf)
+print(paste("Max size factor: ", max(sf), sep=''))
+print(paste("Min size factor: ", min(sf), sep=''))
 
-# If above max(size factors) is less than 4, we can use VST.
+# If the above max(size factors) is less than 4, we can use VST.
 Gvst <- vst(as.matrix(gcount_filt), blind=TRUE, fitType = "local")
 DEGvst <- Gvst[DEGs$gene_id,]
 head(DEGvst) # View transformed gene count data
@@ -208,7 +214,7 @@ dim(DEGvst)
 ```
 
 
-Make a matrix for computing similarity
+Make a matrix for computing similarity.
 ```{r make_similarity_matrix}
 mat <- DEGvst # Make an expression object
 mat <- mat - rowMeans(mat) # Difference in expression compared to average across all samples
@@ -220,11 +226,10 @@ mat <- mat - rowMeans(mat) # Difference in expression compared to average across
 
 ### DEG heatmap
 
-Make a heatmap 
 ```{r plot_heatmap}
-hmTreatment <- subset(treatmentinfo, select=c(condition))
+hmTreatment <- subset(treatmentinfo, select=c(condition)) # Get just the condition column
 col <- list(); col[[condition]] = treatment.colors # Setup list for heatmap colors
-hm_ann_col <- HeatmapAnnotation(df=hmTreatment, col = col) # Make dataframe for column naming
+hm_ann_col <- HeatmapAnnotation(df=hmTreatment, col = col) # Make data.frame for column naming
 dend = cluster_within_group(mat, hmTreatment[[condition]])
 
 DEGheatmap <-  Heatmap(mat,
@@ -233,7 +238,7 @@ DEGheatmap <-  Heatmap(mat,
           name = "Gene expression (vst)",
           show_row_names = F,
           top_annotation = hm_ann_col,
-          show_column_names = F,
+          show_column_names = T,
           row_dend_side = "left",
           column_dend_height = unit(0.5, "in"),
           row_title_side = "right",
@@ -255,8 +260,9 @@ draw(DEGheatmap)
 pca <- prcomp(t(mat)) # Calculate eigengenes
 percentVar <- pca$sdev^2/sum(pca$sdev^2) # Save % variation by PC1 and PC2
 d <- data.frame(treatmentinfo, PC1 = pca$x[, 1], PC2 = pca$x[, 2])
-DEG_PCA <- ggplot(data = d, aes_string(x = "PC1", y = "PC2")) +
-  geom_point(size = 4, aes(colour=!!rlang::sym(condition))) +
+DEG_PCA <- ggplot(data = d, aes(x = PC1, y = PC2)) +
+  geom_point(size = 2, # Point size
+             aes(colour=!!rlang::sym(condition))) +
   xlab(paste0("PC1: ", round(percentVar[1] * 100), "% variance")) +
   ylab(paste0("PC2: ", round(percentVar[2] * 100), "% variance")) +
   coord_fixed() +
@@ -270,6 +276,7 @@ DEG_PCA <- ggplot(data = d, aes_string(x = "PC1", y = "PC2")) +
         axis.title = element_text(size = 14), # Axis title size
         axis.text = element_blank()) # Axis text size and view plot
 DEG_PCA
+ggplotly(DEG_PCA, width = 1000, height = 1000)
 ```
 
 
