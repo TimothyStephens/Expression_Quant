@@ -28,11 +28,13 @@ ref_Salmon_index:
 # fastp paired-end
 trimming_pe:
   params: ''
+  #params: '--disable_adapter_trimming --disable_trim_poly_g --disable_quality_filtering --disable_length_filtering --dont_eval_duplication' # Disable trimming
   threads: 16
 
 # fastp single-end
 trimming_se:
   params: ''
+  #params: '--disable_adapter_trimming --disable_trim_poly_g --disable_quality_filtering --disable_length_filtering --dont_eval_duplication' # Disable trimming
   threads: 16
 
 # Merge trimmed units per sample
