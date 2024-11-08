@@ -16,7 +16,7 @@ properties:
     description: library type
   fq1:
     type: string
-    description: fastq file location
+    description: fastq file location for PE and SE reads
   fq2:
     type: string
     description: fastq file location for PE reads
