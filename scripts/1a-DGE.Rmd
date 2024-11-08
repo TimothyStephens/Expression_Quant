@@ -227,7 +227,7 @@ mat <- mat - rowMeans(mat) # Difference in expression compared to average across
 ### DEG heatmap
 
 ```{r plot_heatmap}
-hmTreatment <- subset(treatmentinfo, select=c(condition)) # Get just the condition column
+hmTreatment <- treatmentinfo %>% select({{condition}}) # Get just the condition column
 col <- list(); col[[condition]] = treatment.colors # Setup list for heatmap colors
 hm_ann_col <- HeatmapAnnotation(df=hmTreatment, col = col) # Make data.frame for column naming
 dend = cluster_within_group(mat, hmTreatment[[condition]])
