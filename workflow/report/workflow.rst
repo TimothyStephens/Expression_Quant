@@ -1,1 +1,1 @@
-This workflow takes raw or trimmed reads and mapps then against a reference transcript or gene database using `salmon`, quantifying the number of mapped reads and TPM. The latest version of this workflow can be found `here <https://github.com/TimothyStephens/Expression_Quant>`.
+This workflow takes raw or trimmed reads and maps then against a reference transcript or gene database using `salmon`, quantifying the number of mapped reads and TPM. The latest version of this workflow can be found `here <https://github.com/TimothyStephens/Expression_Quant>`.
