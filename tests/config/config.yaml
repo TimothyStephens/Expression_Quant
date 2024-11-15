@@ -1,0 +1,19 @@
+################################
+#### Config for Salmon Quant
+################################
+
+# Name of project
+project_name: 'Pocillopora_acuta_KBHIv2'
+
+# Path to sample manifest
+samples: 'tests/config/samples.tsv'
+
+# Path to CDS (or CDS+decoys) to use for quant
+# reference name : absolute path (can be gzipped)
+ref_path:
+  'Pocillopora_acuta_KBHIv2': 'tests/config/Pocillopora_acuta_KBHIv2.salmon_ref.fa.gz'
+
+# To add decoys, uncomment the following commands and provided the path to the decoy sequence names file.
+ref_Salmon_index:
+  params: '--decoys tests/config/Pocillopora_acuta_KBHIv2.decoy_names.txt'
+
